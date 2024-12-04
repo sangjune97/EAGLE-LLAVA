@@ -229,9 +229,9 @@ def initialize_tree0(input_ids, model, past_key_values, logits_processor):
     #     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, hidden_states, token
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token
 
-def initialize_tree(input_ids, model, past_key_values, logits_processor):
+def initialize_tree(input_ids, model, pixel_values, attention_mask, past_key_values, logits_processor):
     outputs, orig, hidden_states = model(
-        input_ids, past_key_values=past_key_values, output_orig=True
+        input_ids, pixel_values, attention_mask, past_key_values=past_key_values, output_orig=True
     )
 
     if logits_processor is not None:
@@ -252,8 +252,8 @@ def initialize_tree(input_ids, model, past_key_values, logits_processor):
 def reset_tree_mode(
         model,
 ):
-    model.base_model.model.tree_mask = None
-    model.base_model.model.tree_mode = None
+    model.base_model.language_model.model.tree_mask = None
+    model.base_model.language_model.model.tree_mode = None
 
 
 def reset_past_key_values(passed_key_values: List[torch.Tensor]) -> List[torch.Tensor]:
@@ -301,6 +301,8 @@ def generate_candidates(tree_logits, tree_indices, retrieve_indices, sample_toke
 def tree_decoding(
         model,
         tree_candidates,
+        pixel_values,
+        attention_mask,
         past_key_values,
         tree_position_ids,
         input_ids,
@@ -310,6 +312,8 @@ def tree_decoding(
 
     outputs, tree_logits, hidden_state = model(
         tree_candidates,
+        pixel_values,
+        attention_mask,
         output_orig=True,
         past_key_values=past_key_values,
         position_ids=position_ids,

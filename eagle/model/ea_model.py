@@ -5,7 +5,7 @@ import time
 import torch
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoProcessor
 import os
 from transformers import PreTrainedModel, PretrainedConfig, AutoConfig, LlavaForConditionalGeneration
 
@@ -40,11 +40,12 @@ class EaModel(nn.Module):
 
         super().__init__()
         self.base_model = base_model
-        self.config = base_model.config
-        self.hidden_size = base_model.lm_head.weight.shape[-1]
-        self.vocab_size = base_model.lm_head.weight.shape[0]
+        self.config = base_model.language_model.config
+        self.hidden_size = base_model.language_model.lm_head.weight.shape[-1]
+        self.vocab_size = base_model.language_model.lm_head.weight.shape[0]
         self.base_model_name_or_path = base_model_name_or_path
-        self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_name_or_path,use_fast=False)
+        self.processor = AutoProcessor.from_pretrained(self.base_model_name_or_path)
+        self.tokenizer = self.processor.tokenizer
         config = EConfig.from_pretrained(ea_model_path)
         with open(ea_model_path,"r") as f:
             con=json.loads(f.read())
@@ -56,11 +57,11 @@ class EaModel(nn.Module):
 
         low_memory=False
 
-        device = base_model.model.layers[-1].self_attn.q_proj.weight.device
-        if device!=base_model.lm_head.weight.device:
+        device = base_model.language_model.model.layers[-1].self_attn.q_proj.weight.device
+        if device!=base_model.language_model.lm_head.weight.device:
             self.ea_layer.diff_device = True
             if not low_memory:
-                self.ea_layer.headweight = base_model.lm_head.weight.clone().to(device)
+                self.ea_layer.headweight = base_model.language_model.lm_head.weight.clone().to(device)
             else:
                 self.ea_layer.layer_device = device
 
@@ -77,6 +78,14 @@ class EaModel(nn.Module):
             Tokenizer: The tokenizer of the base model.
         """
         return self.tokenizer
+    
+    def get_processor(self):
+        """Get the processor of the base model.
+
+        Returns:
+            Processor: The processor of the base model.
+        """
+        return self.processor
 
     @classmethod
     def from_pretrained(
@@ -139,7 +148,7 @@ class EaModel(nn.Module):
 
 
         if total_token==-1:
-            device = model.base_model.model.layers[0].self_attn.q_proj.weight.device
+            device = model.base_model.language_model.model.layers[0].self_attn.q_proj.weight.device
             cans=[40,48,50,56,60]
             x=[1,1.05,1.07,1.1,1.13]
             times=[]
@@ -168,22 +177,27 @@ class EaModel(nn.Module):
     def forward(
             self,
             input_ids=None,
+            pixel_values=None,
             attention_mask=None,
             past_key_values=None,
             output_orig=False,
             position_ids=None,
+            
     ):
 
         with torch.inference_mode():
             # Pass input through the base model
-            outputs = self.base_model.model(
+            print("input id shape:",input_ids.shape)
+            outputs = self.base_model(
                 input_ids=input_ids,
+                pixel_values=pixel_values,
                 attention_mask=attention_mask,
                 past_key_values=past_key_values,
                 position_ids=position_ids,
             )
             if output_orig:
-                orig = self.base_model.lm_head(outputs[0])
+                import pdb;pdb.set_trace()
+                orig = self.base_model.language_model.lm_head(outputs[0])
             hidden_states = outputs[0]
 
         if output_orig:
@@ -195,6 +209,8 @@ class EaModel(nn.Module):
     def eagenerate(
             self,
             input_ids,
+            pixel_values,
+            attention_mask,
             temperature=0.0,
             top_p=0.0,
             top_k=0.0,
@@ -202,9 +218,9 @@ class EaModel(nn.Module):
             max_length=2048,
             log=False,
             is_llama3=False,
+            
 
     ):
-        import pdb;pdb.set_trace()
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
         max_length=max_length-self.ea_layer.total_tokens-10
@@ -234,7 +250,7 @@ class EaModel(nn.Module):
                 past_key_values,
                 past_key_values_data,
                 current_length_data,
-            ) = initialize_past_key_values(self.base_model)
+            ) = initialize_past_key_values(self.base_model.language_model)
             self.past_key_values = past_key_values
             self.past_key_values_data = past_key_values_data
             self.current_length_data = current_length_data
@@ -242,7 +258,7 @@ class EaModel(nn.Module):
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
         draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
-            input_ids, self, past_key_values, logits_processor
+            input_ids, self, pixel_values, attention_mask, past_key_values, logits_processor
         )
         new_token = 0
 
@@ -255,6 +271,8 @@ class EaModel(nn.Module):
             logits, hidden_state_new, outputs = tree_decoding(
                 self,
                 draft_tokens,
+                pixel_values,
+                attention_mask,
                 past_key_values,
                 tree_position_ids,
                 input_ids,

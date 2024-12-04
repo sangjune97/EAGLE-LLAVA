@@ -1,0 +1,51 @@
+from PIL import Image
+import requests
+from transformers import AutoProcessor, LlavaForConditionalGeneration
+from eagle.model.ea_model import EaModel
+import torch
+processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
+
+model = EaModel.from_pretrained(
+    base_model_path="llava-hf/llava-1.5-7b-hf",
+    ea_model_path="yuhuili/EAGLE-Vicuna-7B-v1.3",
+    torch_dtype=torch.float16,
+    low_cpu_mem_usage=True,
+    device_map="auto",
+    total_token=-1
+)
+
+prompt = "USER: <image>\nWhat's the content of the image? ASSISTANT:"
+url = "https://i.namu.wiki/i/brFxhpvr8i82QGYJvQVOY-GJOR0n7ewuok48ldu8ZB1PxB5u0zkHAB6CdRxIIdMaifXRyFhz5aEt_NEhAa_nXsOiCc9fz-xuQUwx9tSPo8ej8q1BSU1m9qDpLdI1fAXHDxmK1ZDFLOsjxs2UdvV9Hw.webp"
+image = Image.open(requests.get(url, stream=True).raw)
+
+inputs = processor(images=image, text=prompt, return_tensors="pt")
+
+# Generate
+generate_ids = model.eagenerate(
+    input_ids=inputs["input_ids"], 
+    attention_mask=inputs["attention_mask"], 
+    pixel_values=inputs["pixel_values"],
+    max_new_tokens=64)
+
+output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+print("Outputs:\n")
+print(output)
+
+model.eval()
+
+prompt = "USER: <image>\nWhat's the content of the image? ASSISTANT:"
+url = "https://i.namu.wiki/i/brFxhpvr8i82QGYJvQVOY-GJOR0n7ewuok48ldu8ZB1PxB5u0zkHAB6CdRxIIdMaifXRyFhz5aEt_NEhAa_nXsOiCc9fz-xuQUwx9tSPo8ej8q1BSU1m9qDpLdI1fAXHDxmK1ZDFLOsjxs2UdvV9Hw.webp"
+image = Image.open(requests.get(url, stream=True).raw)
+
+inputs = processor(images=image, text=prompt, return_tensors="pt")
+
+output_ids=model.eagenerate(
+    input_ids=torch.as_tensor(inputs["input_ids"]).cuda(),
+    attention_mask=inputs["attention_mask"],
+    pixel_values=inputs["pixel_values"],
+    temperature=0.5,
+    max_new_tokens=64)
+
+output = processor.batch_decode(output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+print("Outputs:\n")
+print(output)

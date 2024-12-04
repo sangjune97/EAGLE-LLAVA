@@ -12,7 +12,12 @@ image = Image.open(requests.get(url, stream=True).raw)
 inputs = processor(images=image, text=prompt, return_tensors="pt")
 
 # Generate
-generate_ids = model.generate(**inputs , max_new_tokens=64)
+generate_ids = model.generate(
+    input_ids=inputs["input_ids"], 
+    attention_mask=inputs["attention_mask"], 
+    pixel_values=inputs["pixel_values"],
+    max_new_tokens=64)
+
 output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
 print("Outputs:\n")
 print(output)
