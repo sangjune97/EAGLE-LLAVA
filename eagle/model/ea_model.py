@@ -7,9 +7,10 @@ import torch.nn as nn
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 import os
-from transformers import PreTrainedModel, PretrainedConfig,AutoConfig
+from transformers import PreTrainedModel, PretrainedConfig, AutoConfig, LlavaForConditionalGeneration
 
 
+from .modeling_llava_kv import LlavaForConditionalGeneration as KVLlavaForCausalLM
 from .modeling_llama_kv import LlamaForCausalLM as KVLlamaForCausalLM
 from .modeling_mixtral_kv import MixtralForCausalLM as KVMixtralForCausalLM
 from .modeling_qwen2_kv import LlamaForCausalLM as KVQwen2ForCausalLM
@@ -97,6 +98,10 @@ class EaModel(nn.Module):
             )
         elif Type=='Qwen2ForCausalLM':
             base_model=KVQwen2ForCausalLM.from_pretrained(
+                base_model_path, **kwargs
+            )
+        elif Type=='LlavaForConditionalGeneration':
+            base_model=KVLlavaForCausalLM.from_pretrained(
                 base_model_path, **kwargs
             )
         else:
@@ -199,6 +204,7 @@ class EaModel(nn.Module):
             is_llama3=False,
 
     ):
+        import pdb;pdb.set_trace()
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
         max_length=max_length-self.ea_layer.total_tokens-10
