@@ -56,7 +56,6 @@ class EaModel(nn.Module):
         self.ea_layer = Model(config,bias=bias,total_tokens=total_token,depth=depth,top_k=top_k,threshold=threshold)
 
         low_memory=False
-
         device = base_model.language_model.model.layers[-1].self_attn.q_proj.weight.device
         if device!=base_model.language_model.lm_head.weight.device:
             self.ea_layer.diff_device = True
@@ -187,7 +186,6 @@ class EaModel(nn.Module):
 
         with torch.inference_mode():
             # Pass input through the base model
-            print("input id shape:",input_ids.shape)
             outputs = self.base_model(
                 input_ids=input_ids,
                 pixel_values=pixel_values,
@@ -196,9 +194,8 @@ class EaModel(nn.Module):
                 position_ids=position_ids,
             )
             if output_orig:
-                import pdb;pdb.set_trace()
-                orig = self.base_model.language_model.lm_head(outputs[0])
-            hidden_states = outputs[0]
+                orig = outputs[0]
+            hidden_states = outputs[2][-1]
 
         if output_orig:
             return outputs, orig, hidden_states

@@ -243,9 +243,10 @@ def initialize_tree(input_ids, model, pixel_values, attention_mask, past_key_val
         token = torch.argmax(orig[:, -1])
         token = token[None, None]
     input_ids = torch.cat((input_ids, token.to(input_ids.device)), dim=1)
+    ea_layer_device = model.ea_layer.fc.weight.device
+    hidden_states = hidden_states.to(ea_layer_device)
     # Clone the output hidden states
-
-    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(hidden_states, input_ids, model.base_model.lm_head,logits_processor)
+    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(hidden_states, input_ids, model.base_model.language_model.lm_head,logits_processor)
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, orig, hidden_states, token
 
 
