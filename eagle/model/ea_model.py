@@ -254,7 +254,6 @@ class EaModel(nn.Module):
 
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
-        import pdb;pdb.set_trace()
         draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
             input_ids, self, pixel_values, attention_mask, past_key_values, logits_processor
         )

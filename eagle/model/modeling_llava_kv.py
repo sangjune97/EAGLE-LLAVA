@@ -423,7 +423,8 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         >>> processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "\nUSER: What's the content of the image?\nASSISTANT: The image features a stop sign on a street corner"
         ```"""
-
+        print(input_ids.shape[1])
+        print("\n")
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = True
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -443,7 +444,6 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
             raise ValueError(
                 "You cannot specify both pixel_values and inputs_embeds at the same time, and must specify either one"
             )
-
         legacy_processing = False
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
