@@ -319,7 +319,6 @@ def tree_decoding(
         input_ids,
         retrieve_indices,
 ):
-    import pdb;pdb.set_trace()
     position_ids = tree_position_ids + input_ids.shape[1]
 
     outputs, tree_logits, hidden_state = model(

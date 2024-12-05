@@ -307,6 +307,7 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         return image_features
     
     def _merge_input_ids_with_image_features(self, image_features, inputs_embeds, input_ids, attention_mask, labels):
+        import pdb;pdb.set_trace()
         num_images, num_image_patches, embed_dim = image_features.shape
         batch_size, sequence_length = input_ids.shape
         left_padding = not torch.sum(input_ids[:, -1] == torch.tensor(self.pad_token_id))
@@ -451,9 +452,9 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
             # if the number of image tokens is more than image embeddings seq length, then prob we expanded it in processing
             # not very reliable, but we don't expect one to actually pass 500+ images for one prompt
             # In case we're in decoding stage, legacy behavior is checked by presence of pixel values even if use_cache=True
-            legacy_processing = (
-                (input_ids == self.config.image_token_index).sum(1).max() < self.config.image_seq_length
-            ) or (input_ids.shape[-1] == 1 and pixel_values is not None)
+            #legacy_processing = (
+            #    (input_ids == self.config.image_token_index).sum(1).max() < self.config.image_seq_length
+            #) or (input_ids.shape[-1] == 1 and pixel_values is not None)
 
         if pixel_values is not None:
             image_features = self.get_image_features(
@@ -463,6 +464,7 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
             )
 
             if legacy_processing:
+                
                 logger.warning_once(
                     "Expanding inputs for image tokens in LLaVa should be done in processing. "
                     "Please add `patch_size` and `vision_feature_select_strategy` to the model's processing config or set directly "
@@ -511,6 +513,7 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
 
             # TODO: @raushan retain only the new behavior after v4.47
             else:
+                import pdb;pdb.set_trace()
                 n_image_tokens = (input_ids == self.config.image_token_index).sum(dim=-1)[0].item()
                 n_image_features = image_features.shape[1]
                 if n_image_tokens != n_image_features:
