@@ -643,7 +643,6 @@ class Model(nn.Module):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                 )
-            import pdb;pdb.set_trace()
 
             hidden_states = layer_outputs[0]
 

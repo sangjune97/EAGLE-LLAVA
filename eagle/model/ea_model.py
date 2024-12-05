@@ -254,14 +254,16 @@ class EaModel(nn.Module):
 
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
+        import pdb;pdb.set_trace()
         draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
             input_ids, self, pixel_values, attention_mask, past_key_values, logits_processor
         )
         new_token = 0
+        
 
         for idx in range(max_length):
             #with Timer("all"):
-            self.base_model.model.tree_mask = tree_mask
+            self.base_model.language_model.tree_mask = tree_mask
 
             draft_tokens=draft_tokens.to(input_ids.device)
             #with Timer("tree_decoding"):

@@ -13,6 +13,7 @@ model = EaModel.from_pretrained(
     device_map="auto",
     total_token=-1
 )
+model.eval()
 
 prompt = "USER: <image>\nWhat's the content of the image? ASSISTANT:"
 url = "https://i.namu.wiki/i/brFxhpvr8i82QGYJvQVOY-GJOR0n7ewuok48ldu8ZB1PxB5u0zkHAB6CdRxIIdMaifXRyFhz5aEt_NEhAa_nXsOiCc9fz-xuQUwx9tSPo8ej8q1BSU1m9qDpLdI1fAXHDxmK1ZDFLOsjxs2UdvV9Hw.webp"
