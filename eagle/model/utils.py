@@ -229,6 +229,13 @@ def initialize_tree0(input_ids, model, past_key_values, logits_processor):
     #     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, hidden_states, token
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token
 
+def remove_image_token(input_ids, hidden_states, img_tok_index):
+    mask = input_ids != img_tok_index
+    filtered_input_ids = input_ids[mask].view(1, -1)
+    filtered_hidden_states = hidden_states[:, mask[0], :]
+    
+    return filtered_input_ids, filtered_hidden_states
+
 def initialize_tree(input_ids, model, pixel_values, attention_mask, past_key_values, logits_processor):
     outputs, orig, hidden_states = model(
         input_ids, pixel_values, attention_mask, past_key_values=past_key_values, output_orig=True
@@ -242,7 +249,10 @@ def initialize_tree(input_ids, model, pixel_values, attention_mask, past_key_val
     else:
         token = torch.argmax(orig[:, -1])
         token = token[None, None]
+    input_ids, hidden_states = remove_image_token(input_ids, hidden_states, model.base_model.config.image_token_index)
     input_ids = torch.cat((input_ids, token.to(input_ids.device)), dim=1)
+    
+    
     ea_layer_device = model.ea_layer.fc.weight.device
     hidden_states = hidden_states.to(ea_layer_device)
     # Clone the output hidden states
