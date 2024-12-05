@@ -934,6 +934,8 @@ class LlamaModel(LlamaPreTrainedModel):
             output_hidden_states: Optional[bool] = None,
             return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
+        if position_ids is not None and position_ids[0][0] == 656:
+            import pdb;pdb.set_trace()
         output_attentions = (
             output_attentions
             if output_attentions is not None
