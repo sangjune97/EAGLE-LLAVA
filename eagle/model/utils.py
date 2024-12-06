@@ -256,6 +256,7 @@ def initialize_tree(input_ids, model, pixel_values, attention_mask, past_key_val
     ea_layer_device = model.ea_layer.fc.weight.device
     hidden_states = hidden_states.to(ea_layer_device)
     # Clone the output hidden states
+    
     draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(hidden_states, input_ids, model.base_model.language_model.lm_head,logits_processor)
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, orig, hidden_states, token
 
@@ -466,9 +467,12 @@ def update_inference_inputs(
         token = torch.argmax(prob)
         token = token[None, None]
     # hidden_state = torch.cat((hidden_state, accept_hidden_state_new), dim=1)
+    ea_layer_device = model.ea_layer.fc.weight.device
+    accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)
+    import pdb;pdb.set_trace()
     draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(accept_hidden_state_new,
                                               input_ids=torch.cat((input_ids, token.to(input_ids.device)), dim=1),
-                                              head=model.base_model.lm_head,logits_processor=logits_processor)
+                                              head=model.base_model.language_model.lm_head,logits_processor=logits_processor)
 
 
     new_token += accept_length + 1
