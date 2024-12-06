@@ -11,7 +11,6 @@ url = "https://i.namu.wiki/i/brFxhpvr8i82QGYJvQVOY-GJOR0n7ewuok48ldu8ZB1PxB5u0zk
 image = Image.open(requests.get(url, stream=True).raw)
 
 inputs = processor(images=image, text=prompt, return_tensors="pt")
-import pdb;pdb.set_trace()
 # Generate
 generate_ids = model.generate(
     input_ids=inputs["input_ids"], 

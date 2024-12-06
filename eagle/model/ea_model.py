@@ -283,6 +283,7 @@ class EaModel(nn.Module):
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
+            print(best_candidate)
             # print(accept_length)
             #with Timer("update_inference_inputs"):
             input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token = update_inference_inputs(

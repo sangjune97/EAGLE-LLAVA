@@ -26,8 +26,8 @@ generate_ids = model.eagenerate(
     input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
     attention_mask=torch.as_tensor(inputs["attention_mask"]).cuda(), 
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
-    max_new_tokens=64)
+    max_new_tokens=256)
 
-output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+output = processor.batch_decode(generate_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False)[0]
 print("Outputs:\n")
 print(output)
