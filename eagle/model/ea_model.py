@@ -261,7 +261,7 @@ class EaModel(nn.Module):
 
         for idx in range(max_length):
             #with Timer("all"):
-            self.base_model.language_model.tree_mask = tree_mask
+            self.base_model.language_model.model.tree_mask = tree_mask
 
             draft_tokens=draft_tokens.to(input_ids.device)
             #with Timer("tree_decoding"):
@@ -276,15 +276,12 @@ class EaModel(nn.Module):
                 input_ids,
                 retrieve_indices,
             )
-            #retrieve_indices=tree_buffers["retrieve_indices"]
-            #logits = logits[0, retrieve_indices]
+
             draft_tokens=torch.cat((draft_tokens,padding),dim=1)
             candidates=draft_tokens[0,retrieve_indices]
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
-            print(best_candidate)
-            # print(accept_length)
             #with Timer("update_inference_inputs"):
             input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token = update_inference_inputs(
                 input_ids,

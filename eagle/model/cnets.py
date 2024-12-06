@@ -741,7 +741,6 @@ class Model(nn.Module):
 
             ss_token.append(topk_index)
             scores_list.append(cu_scores)
-            import pdb;pdb.set_trace()
             tree_mask = torch.cat((tree_mask[:, :, out_ids], self.tree_mask_init), dim=3)
 
             # if self.threshold < 0 and cu_scores.max() < self.threshold:

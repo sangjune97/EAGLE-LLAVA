@@ -4,7 +4,7 @@ import torch
 from transformers import AutoProcessor, AutoTokenizer, LlavaForConditionalGeneration
 
 # 모델 및 프로세서 초기화
-model = LlavaForConditionalGeneration.from_pretrained("llava-hf/llava-1.5-7b-hf", device_map="auto")
+model = LlavaForConditionalGeneration.from_pretrained("llava-hf/llava-1.5-7b-hf", device_map="auto", torch_dtype=torch.float16, low_cpu_mem_usage=True)
 processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 tokenizer = AutoTokenizer.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
@@ -48,5 +48,6 @@ for _ in range(6):  # 최대 64개의 토큰을 생성
         [inputs["attention_mask"], torch.ones((1, 1), dtype=inputs["attention_mask"].dtype, device=inputs["attention_mask"].device)],
         dim=1
     )
+    print(inputs["attention_mask"].shape)
 
 print("Generated text:", generated_text)

@@ -13,6 +13,7 @@ image = Image.open(requests.get(url, stream=True).raw)
 inputs = processor(images=image, text=prompt, return_tensors="pt")
 # Generate
 generate_ids = model.generate(
+    temperature=0
     input_ids=inputs["input_ids"], 
     attention_mask=inputs["attention_mask"], 
     pixel_values=inputs["pixel_values"],

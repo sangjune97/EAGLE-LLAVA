@@ -22,12 +22,16 @@ image = Image.open(requests.get(url, stream=True).raw)
 inputs = processor(images=image, text=prompt, return_tensors="pt")
 
 # Generate
-generate_ids = model.eagenerate(
+generate_ids, new_token, idx  = model.eagenerate(
+    temperature=0,
+    log=True,
     input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
     attention_mask=torch.as_tensor(inputs["attention_mask"]).cuda(), 
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
     max_new_tokens=256)
 
-output = processor.batch_decode(generate_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False)[0]
+output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
 print("Outputs:\n")
 print(output)
+print(new_token)
+print(idx)

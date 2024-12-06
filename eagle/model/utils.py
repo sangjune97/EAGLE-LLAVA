@@ -323,7 +323,7 @@ def tree_decoding(
         retrieve_indices,
 ):
     position_ids = tree_position_ids + input_ids.shape[1]
-
+    print(attention_mask.shape)
     outputs, tree_logits, hidden_state = model(
         tree_candidates,
         pixel_values,
