@@ -11,7 +11,7 @@ model = EaModel.from_pretrained(
     torch_dtype=torch.float16,
     low_cpu_mem_usage=True,
     device_map="auto",
-    total_token=-1
+    total_token=60
 )
 model.eval()
 

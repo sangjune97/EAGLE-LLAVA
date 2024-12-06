@@ -234,7 +234,6 @@ class EaModel(nn.Module):
         self.ea_layer.reset_kv()
 
 
-
         # Initialize the past key and value states
         if hasattr(self, "past_key_values"):
             past_key_values = self.past_key_values
