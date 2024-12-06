@@ -383,7 +383,7 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         pixel_values: torch.FloatTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        past_key_values = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         vision_feature_layer: Optional[int] = None,
         vision_feature_select_strategy: Optional[str] = None,
@@ -474,7 +474,8 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
                 
                 # Retrieve the first layer to inspect the logits and mask out the hidden states
                 # that are set to 0
-                first_layer_past_key_value = past_key_values[0][0].data[:, :, :, 0]
+                first_layer_past_key_value = past_key_values[0][0].data[:, :, :past_key_values[0][0].current_length, 0]
+                import pdb;pdb.set_trace()
 
                 # Sum all dimensions of head_dim (-2) to avoid random errors such as: https://github.com/huggingface/transformers/pull/28032#issuecomment-1863691941
                 batch_index, non_attended_tokens = torch.where(first_layer_past_key_value.float().sum(-2) == 0)
