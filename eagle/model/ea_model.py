@@ -242,6 +242,7 @@ class EaModel(nn.Module):
             # Reset the past key and value states
             current_length_data.zero_()
         else:
+            print("init kvcache")
             (
                 past_key_values,
                 past_key_values_data,
@@ -275,6 +276,7 @@ class EaModel(nn.Module):
                 input_ids,
                 retrieve_indices,
             )
+            
 
             draft_tokens=torch.cat((draft_tokens,padding),dim=1)
             candidates=draft_tokens[0,retrieve_indices]

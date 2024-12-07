@@ -986,7 +986,6 @@ class LlamaModel(LlamaPreTrainedModel):
             inputs_embeds = self.embed_tokens(input_ids)
         # embed positions
         if attention_mask is None:
-            print("init attention_mask\n")
             attention_mask = torch.ones(
                 (batch_size, seq_length_with_past),
                 dtype=torch.bool,
@@ -998,7 +997,6 @@ class LlamaModel(LlamaPreTrainedModel):
             inputs_embeds,
             past_key_values_length,
         )
-        print(attention_mask.shape)
 
         hidden_states = inputs_embeds
 
