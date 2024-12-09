@@ -11,7 +11,7 @@ model = EaModel.from_pretrained(
     torch_dtype=torch.float16,
     low_cpu_mem_usage=True,
     device_map="auto",
-    total_token=60
+    total_token=18
 )
 model.eval()
 
@@ -28,7 +28,7 @@ generate_ids, new_token, idx  = model.eagenerate(
     input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
     attention_mask=torch.as_tensor(inputs["attention_mask"]).cuda(), 
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
-    max_new_tokens=256)
+    max_new_tokens=512)
 
 output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
 print("Outputs:\n")

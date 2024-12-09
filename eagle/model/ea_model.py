@@ -264,6 +264,7 @@ class EaModel(nn.Module):
             self.base_model.language_model.model.tree_mask = tree_mask
 
             draft_tokens=draft_tokens.to(input_ids.device)
+
             #with Timer("tree_decoding"):
             
             logits, hidden_state_new, outputs = tree_decoding(

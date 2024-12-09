@@ -242,7 +242,6 @@ def initialize_tree(input_ids, model, pixel_values, attention_mask, past_key_val
     outputs, orig, hidden_states = model(
         input_ids, pixel_values, attention_mask, past_key_values=past_key_values, output_orig=True
     )
-    print("init tree\n")
 
     if logits_processor is not None:
         logits = orig[:, -1]
@@ -323,7 +322,6 @@ def tree_decoding(
         input_ids,
         retrieve_indices,
 ):
-    print("tree decoding\n")
     position_ids = tree_position_ids + input_ids.shape[1]
     outputs, tree_logits, hidden_state = model(
         tree_candidates,
@@ -347,7 +345,6 @@ def evaluate_posterior(
         candidates: torch.Tensor,
         logits_processor,
 ):
-    print("evaluate")
     """
     Evaluate the posterior probabilities of the candidates based on the provided logits and choose the best candidate.
 
@@ -372,7 +369,7 @@ def evaluate_posterior(
                 candidates[:, 1:].to(logits.device) == torch.argmax(logits[:, :-1], dim=-1)
         ).int()
         candidates_accept_length = (torch.cumprod(posterior_mask, dim=1)).sum(dim=1)
-        accept_length = candidates_accept_length.max()
+        accept_length = 0
         # Choose the best candidate
         if accept_length == 0:
             # Default to the first candidate if none are accepted
