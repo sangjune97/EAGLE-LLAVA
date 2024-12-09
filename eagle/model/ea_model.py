@@ -207,7 +207,6 @@ class EaModel(nn.Module):
             self,
             input_ids,
             pixel_values,
-            attention_mask,
             temperature=0.0,
             top_p=0.0,
             top_k=0.0,
@@ -254,7 +253,7 @@ class EaModel(nn.Module):
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
         draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
-            input_ids, self, pixel_values, attention_mask, past_key_values, logits_processor
+            input_ids, self, pixel_values, past_key_values, logits_processor
         )
         new_token = 0
         
@@ -270,7 +269,6 @@ class EaModel(nn.Module):
                 self,
                 draft_tokens,
                 pixel_values,
-                attention_mask,
                 past_key_values,
                 tree_position_ids,
                 input_ids,

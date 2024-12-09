@@ -21,7 +21,7 @@ past_key_values = None
 generated_text = ""
 
 # 반복적으로 토큰 생성
-for _ in range(6):  # 최대 64개의 토큰을 생성
+for _ in range(32):  # 최대 64개의 토큰을 생성
     outputs = model(
         input_ids=inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
@@ -35,7 +35,7 @@ for _ in range(6):  # 최대 64개의 토큰을 생성
     past_key_values = outputs.past_key_values
 
     # 디코딩하여 텍스트 업데이트
-    generated_text += tokenizer.decode(next_token_id, skip_special_tokens=False)
+    generated_text += " "+tokenizer.decode(next_token_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
 
     # <EOS> 토큰이 생성되면 중단
     if tokenizer.eos_token_id in next_token_id:

@@ -26,7 +26,6 @@ generate_ids, new_token, idx  = model.eagenerate(
     temperature=0,
     log=True,
     input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
-    attention_mask=torch.as_tensor(inputs["attention_mask"]).cuda(), 
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
     max_new_tokens=256)
 
