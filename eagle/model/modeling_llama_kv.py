@@ -997,7 +997,6 @@ class LlamaModel(LlamaPreTrainedModel):
             inputs_embeds,
             past_key_values_length,
         )
-        print(attention_mask.shape)
 
         hidden_states = inputs_embeds
 
