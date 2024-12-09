@@ -912,13 +912,13 @@ class LlamaModel(LlamaPreTrainedModel):
             )
 
 
-
-        #if hasattr(self, "tree_mask") and self.tree_mask is not None:
-        #    tree_mask = self.tree_mask
-        #    tree_len = tree_mask.size(-1)
-        #    combined_attention_mask[:, :, -tree_len:, -tree_len:][
-        #        tree_mask == 0
-        #        ] = combined_attention_mask.min()
+        import pdb;pdb.set_trace()
+        if hasattr(self, "tree_mask") and self.tree_mask is not None:
+            tree_mask = self.tree_mask
+            tree_len = tree_mask.size(-1)
+            combined_attention_mask[:, :, -tree_len:, -tree_len:][
+                tree_mask == 0
+                ] = combined_attention_mask.min()
         
 
         return combined_attention_mask

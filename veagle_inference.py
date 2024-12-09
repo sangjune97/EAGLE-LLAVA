@@ -11,7 +11,7 @@ model = EaModel.from_pretrained(
     torch_dtype=torch.float16,
     low_cpu_mem_usage=True,
     device_map="auto",
-    total_token=18
+    total_token=4
 )
 model.eval()
 
@@ -33,5 +33,3 @@ generate_ids, new_token, idx  = model.eagenerate(
 output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
 print("Outputs:\n")
 print(output)
-print(new_token)
-print(idx)
