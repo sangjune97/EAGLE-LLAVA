@@ -912,7 +912,6 @@ class LlamaModel(LlamaPreTrainedModel):
             )
 
 
-        import pdb;pdb.set_trace()
         if hasattr(self, "tree_mask") and self.tree_mask is not None:
             tree_mask = self.tree_mask
             tree_len = tree_mask.size(-1)
@@ -981,8 +980,8 @@ class LlamaModel(LlamaPreTrainedModel):
                 device=device,
             )
             position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
-        #else:  
-            #position_ids = position_ids.view(-1, seq_length).long()
+        else:  
+            position_ids = position_ids.view(-1, seq_length).long()
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)

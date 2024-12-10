@@ -498,7 +498,7 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
                 extended_attention_mask[new_batch_index, new_non_attended_tokens] = 0
 
                 attention_mask = torch.cat((extended_attention_mask, attention_mask[:, -target_length:]), dim=1)
-                position_ids = torch.sum(attention_mask, dim=1).unsqueeze(-1) - 1
+                #position_ids = torch.sum(attention_mask, dim=1).unsqueeze(-1) - 1
                 cache_position = torch.arange(attention_mask.shape[1], device=attention_mask.device)[
                     -target_length:
                 ]
