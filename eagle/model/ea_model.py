@@ -56,6 +56,7 @@ class EaModel(nn.Module):
         self.ea_layer = Model(config,bias=bias,total_tokens=total_token,depth=depth,top_k=top_k,threshold=threshold)
 
         low_memory=False
+        
         device = base_model.language_model.model.layers[-1].self_attn.q_proj.weight.device
         if device!=base_model.language_model.lm_head.weight.device:
             self.ea_layer.diff_device = True
@@ -257,6 +258,9 @@ class EaModel(nn.Module):
         )
         new_token = 0
         
+        # accept_length 누적 리스트
+        accept_lengths = []
+        
 
         for idx in range(max_length):
             #with Timer("all"):
@@ -283,6 +287,10 @@ class EaModel(nn.Module):
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
+            
+            # accept_length 값을 리스트에 추가
+            accept_lengths.append(accept_length)
+            
             #print(accept_length)
             #with Timer("update_inference_inputs"):
             input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token = update_inference_inputs(
@@ -310,10 +318,14 @@ class EaModel(nn.Module):
                 break
             if input_ids.shape[1] > max_length:
                 break
+            
+        # 평균 accept_length 계산
+        avg_accept_length = sum(accept_lengths) / len(accept_lengths) if accept_lengths else 0.0
+        
         if not log:
             return input_ids
         else:
-            return input_ids, new_token, idx
+            return input_ids, new_token, idx, avg_accept_length
 
 
     @torch.no_grad()

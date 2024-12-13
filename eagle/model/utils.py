@@ -254,8 +254,8 @@ def initialize_tree(input_ids, model, pixel_values, attention_mask, past_key_val
     filtered_input_ids, filtered_hidden_states = remove_image_token(input_ids, model.base_model.config.image_token_index, hidden_states)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     
-    
     ea_layer_device = model.ea_layer.fc.weight.device
+    filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
     # Clone the output hidden states
     
@@ -444,6 +444,9 @@ def update_inference_inputs(
     input_ids = torch.cat(
         [input_ids, candidates[None, best_candidate, : accept_length + 1].to(input_ids.device)], dim=-1
     )
+    
+    #selected_tokens = model.tokenizer.batch_decode(candidates[None, best_candidate, 1: accept_length + 1].tolist())
+    #print(selected_tokens)
     # Update the past key values based on the selected tokens
     # Source tensor that contains relevant past information based on the selected candidate
     for past_key_values_data in past_key_values_data_list:
@@ -458,8 +461,7 @@ def update_inference_inputs(
 
     retrieve_hidden_state_new = hidden_state_new[:, retrieve_indices]
     accept_hidden_state_new = retrieve_hidden_state_new[:, best_candidate, : accept_length + 1]
-    # token=model.base_model.lm_head(accept_hidden_state_new[:,-1]).argmax()
-    # token=token[None,None]
+
     prob = sample_p
     if logits_processor is not None:
         token = torch.multinomial(prob, 1)
@@ -467,10 +469,12 @@ def update_inference_inputs(
     else:
         token = torch.argmax(prob)
         token = token[None, None]
-    # hidden_state = torch.cat((hidden_state, accept_hidden_state_new), dim=1)
     ea_layer_device = model.ea_layer.fc.weight.device
-    accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)
+    
     filtered_input_ids=remove_image_token(input_ids, model.base_model.config.image_token_index)
+    filtered_input_ids = filtered_input_ids.to(ea_layer_device)
+    accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)
+    
     draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(accept_hidden_state_new,
                                               input_ids=torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1),
                                               head=model.base_model.language_model.lm_head,logits_processor=logits_processor)

@@ -1,0 +1,34 @@
+Collecting accelerate
+  Downloading accelerate-1.2.0-py3-none-any.whl.metadata (19 kB)
+Requirement already satisfied: numpy<3.0.0,>=1.17 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from accelerate) (2.0.1)
+Requirement already satisfied: packaging>=20.0 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from accelerate) (24.2)
+Collecting psutil (from accelerate)
+  Using cached psutil-6.1.0-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (22 kB)
+Requirement already satisfied: pyyaml in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from accelerate) (6.0.2)
+Requirement already satisfied: torch>=1.10.0 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from accelerate) (2.5.1)
+Requirement already satisfied: huggingface-hub>=0.21.0 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from accelerate) (0.26.5)
+Requirement already satisfied: safetensors>=0.4.3 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from accelerate) (0.4.5)
+Requirement already satisfied: filelock in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from huggingface-hub>=0.21.0->accelerate) (3.13.1)
+Requirement already satisfied: fsspec>=2023.5.0 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from huggingface-hub>=0.21.0->accelerate) (2024.10.0)
+Requirement already satisfied: requests in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from huggingface-hub>=0.21.0->accelerate) (2.32.3)
+Requirement already satisfied: tqdm>=4.42.1 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from huggingface-hub>=0.21.0->accelerate) (4.67.1)
+Requirement already satisfied: typing-extensions>=3.7.4.3 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from huggingface-hub>=0.21.0->accelerate) (4.11.0)
+Requirement already satisfied: networkx in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from torch>=1.10.0->accelerate) (3.2.1)
+Requirement already satisfied: jinja2 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from torch>=1.10.0->accelerate) (3.1.4)
+Collecting sympy==1.13.1 (from torch>=1.10.0->accelerate)
+  Using cached sympy-1.13.1-py3-none-any.whl.metadata (12 kB)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from sympy==1.13.1->torch>=1.10.0->accelerate) (1.3.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from jinja2->torch>=1.10.0->accelerate) (2.1.3)
+Requirement already satisfied: charset-normalizer<4,>=2 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from requests->huggingface-hub>=0.21.0->accelerate) (3.3.2)
+Requirement already satisfied: idna<4,>=2.5 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from requests->huggingface-hub>=0.21.0->accelerate) (3.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from requests->huggingface-hub>=0.21.0->accelerate) (2.2.3)
+Requirement already satisfied: certifi>=2017.4.17 in /home/sangjun/anaconda3/envs/llava/lib/python3.10/site-packages (from requests->huggingface-hub>=0.21.0->accelerate) (2024.8.30)
+Downloading accelerate-1.2.0-py3-none-any.whl (336 kB)
+Using cached sympy-1.13.1-py3-none-any.whl (6.2 MB)
+Using cached psutil-6.1.0-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (287 kB)
+Installing collected packages: sympy, psutil, accelerate
+  Attempting uninstall: sympy
+    Found existing installation: sympy 1.13.2
+    Uninstalling sympy-1.13.2:
+      Successfully uninstalled sympy-1.13.2
+Successfully installed accelerate-1.2.0 psutil-6.1.0 sympy-1.13.1

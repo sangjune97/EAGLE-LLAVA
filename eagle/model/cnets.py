@@ -659,7 +659,6 @@ class Model(nn.Module):
 
     @torch.no_grad()
     def topK_genrate(self, hidden_states, input_ids, head, logits_processor):
-        
         input_ids = input_ids.to(hidden_states.device)
         total_tokens = self.total_tokens
         depth = self.depth
@@ -673,7 +672,6 @@ class Model(nn.Module):
 
         input_ids = input_ids[:, 1:]
         input_ids = input_ids.to(hidden_states.device)
-
         len_posi = input_ids.shape[1]
         self.reset()
 
@@ -686,8 +684,14 @@ class Model(nn.Module):
             out_hidden, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True)
         self.stable_kv = past_key_values
         last_hidden = out_hidden[:, -1]
-
-        last_headout = head(last_hidden)
+        if not self.diff_device:
+                last_headout = head(last_hidden)
+        else:
+            if hasattr(self, "layer_device"):
+                last_headout = head(last_hidden)
+                last_headout = last_headout.to(self.layer_device)
+            else:
+                last_headout = F.linear(last_hidden, self.headweight)
 
         last_p = self.logsoftmax(last_headout)
         top = torch.topk(last_p, top_k, dim=-1)
@@ -706,6 +710,7 @@ class Model(nn.Module):
             self.tree_mask = tree_mask
             position_ids = len_posi + self.position_ids
             # with Timer("draft one"):
+            
             out_hidden, past_key_values = self(input_hidden, input_ids=input_ids, past_key_values=past_key_values,
                                                position_ids=position_ids, use_cache=True)
             len_posi += 1
@@ -716,8 +721,16 @@ class Model(nn.Module):
             bias = 1 + top_k ** 2 * bias2 + bias1
             parents = (topk_cs_index + bias)
             parents_list.append(parents)
-
-            last_headout = head(out_hidden[0])
+            
+            if not self.diff_device:
+                last_headout = head(out_hidden[0])
+            else:
+                if hasattr(self, "layer_device"):
+                    last_headout = head(out_hidden[0])
+                    last_headout = last_headout.to(self.layer_device)
+                else:
+                    last_headout = F.linear(out_hidden[0], self.headweight)
+            
             last_p = self.logsoftmax(last_headout)
 
             top = torch.topk(last_p, top_k, dim=-1)

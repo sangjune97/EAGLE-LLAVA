@@ -243,7 +243,7 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         self.multi_modal_projector = LlavaMultiModalProjector(config)
         self.vocab_size = config.vocab_size
         self.language_model = KVLlamaForCausalLM._from_config(
-            config.text_config, attn_implementation=config._attn_implementation
+            config.text_config
         )
         self.pad_token_id = self.config.pad_token_id if self.config.pad_token_id is not None else -1
         self.post_init()
@@ -461,15 +461,6 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
             )
 
             if legacy_processing:
-                
-                logger.warning_once(
-                    "Expanding inputs for image tokens in LLaVa should be done in processing. "
-                    "Please add `patch_size` and `vision_feature_select_strategy` to the model's processing config or set directly "
-                    "with `processor.patch_size = {{patch_size}}` and processor.vision_feature_select_strategy = {{vision_feature_select_strategy}}`. "
-                    "Using processors without these attributes in the config is deprecated and will throw an error in v4.47."
-                )
-                # prefill stage vs decoding stage (legacy behavior copied)
-                
                 # Retrieve the first layer to inspect the logits and mask out the hidden states
                 # that are set to 0
                 first_layer_past_key_value = past_key_values[0][0].data[:, :, :past_key_values[0][0].current_length, 0]
