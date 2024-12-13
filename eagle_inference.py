@@ -6,8 +6,8 @@ model = EaModel.from_pretrained(
     ea_model_path="yuhuili/EAGLE-llama2-chat-7B",
     torch_dtype=torch.float16,
     low_cpu_mem_usage=True,
-    device_map="cpu",
-    total_token=-1
+    device_map="auto",
+    total_token=60
 )
 model.eval()
 your_message="Hello"
