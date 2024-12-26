@@ -14,12 +14,15 @@ os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_index)[1:-1]
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer,BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor, BitsAndBytesConfig
 from datasets import load_dataset
 import json
 from fastchat.model.model_adapter import get_conversation_template
+from PIL import Image
 
-bigname="llava-hf/llava-1.5-7b-hf"
+#bigname="llava-hf/llava-1.5-7b-hf"
+bigname="lmsys/vicuna-13b-v1.5"
+
 
 
 
@@ -41,17 +44,16 @@ def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    ds = load_dataset('json', data_files="ShareGPT_V4.3_unfiltered_cleaned_split.json")
+    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
+    image_folder = '/data/COCO/train2017'
+    
+    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
+    ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
     ds = ds['train']
     ds = ds.shuffle(seed=42)
     ds1 = ds.select(range(args.start, args.end))
-    # ds1 = ds.select(range(100,200))
-    # dst=ds.select(range(200,300))
-    # ds2=ds.select(range(300,len(ds)))
     original_columns1 = ds1.column_names
-    # original_columns2 = ds2.column_names
     num_proc = 4
-
     def preprocess_function(examples):
         new_examples = {
             "conversation":[],
@@ -71,16 +73,18 @@ def build_dataset_rank(
                 assert role == conv.roles[j % 2], f"{i}"
                 conv.append_message(role, sentence["value"])
             conversation=conv.get_prompt()
-            # if i==56:
-            #     print(i)
-            # if i==57:
-            #     print(i)
-            input_ids = tokenizer(
-                conversation,
-                return_tensors="pt",
-                max_length=tokenizer.model_max_length,
-                truncation=True,
-            ).input_ids[0]
+            #input_ids = tokenizer(
+            #    conversation,
+            #    return_tensors="pt",
+            #    max_length=tokenizer.model_max_length,
+            #    truncation=True,
+            #).input_ids[0]
+            
+            image_file = examples['image']
+            print(image_file)
+            image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
+            inputs = processor(images=image, text=conversation, return_tensors="pt")
+            input_ids=torch.as_tensor(inputs["input_ids"])
             loss_mask=torch.ones_like(input_ids)
             #print(i)
 
@@ -124,7 +128,7 @@ def build_dataset_rank(
             new_examples["loss_mask"].append(loss_mask[None,:])
 
         return new_examples
-
+    
     ds1 = ds1.map(
         preprocess_function,
         batched=True,
@@ -132,6 +136,7 @@ def build_dataset_rank(
         remove_columns=original_columns1,
         load_from_cache_file=False
     )
+    import pdb;pdb.set_trace()
 
     # ds1 = ds1.filter(lambda x: len(x["input_ids"]) < 1024, batched=False)
     # ds1 = ds1.filter(lambda x: x['queryf'] not in gqs, batched=False)
