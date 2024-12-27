@@ -14,14 +14,14 @@ os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_index)[1:-1]
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor, BitsAndBytesConfig, LlavaForConditionalGeneration
 from datasets import load_dataset
 import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-#bigname="llava-hf/llava-1.5-7b-hf"
-bigname="lmsys/vicuna-13b-v1.5"
+bigname="llava-hf/llava-1.5-7b-hf"
+#bigname="lmsys/vicuna-13b-v1.5"
 
 
 
@@ -58,6 +58,7 @@ def build_dataset_rank(
         new_examples = {
             "conversation":[],
             "input_ids": [],
+            "pixel_values":[],
             "loss_mask": []
         }
         for i in range(len(examples['id'])):
@@ -80,11 +81,11 @@ def build_dataset_rank(
             #    truncation=True,
             #).input_ids[0]
             
-            image_file = examples['image']
-            print(image_file)
+            image_file = examples['image'][i]
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
             inputs = processor(images=image, text=conversation, return_tensors="pt")
             input_ids=torch.as_tensor(inputs["input_ids"])
+            pixel_values=torch.as_tensor(inputs["pixel_values"])
             loss_mask=torch.ones_like(input_ids)
             #print(i)
 
@@ -125,6 +126,7 @@ def build_dataset_rank(
 
             new_examples["conversation"].append(conversation)
             new_examples["input_ids"].append(input_ids[None,:])
+            new_examples["pixel_values"].append(pixel_values[None,:])
             new_examples["loss_mask"].append(loss_mask[None,:])
 
         return new_examples
@@ -136,8 +138,6 @@ def build_dataset_rank(
         remove_columns=original_columns1,
         load_from_cache_file=False
     )
-    import pdb;pdb.set_trace()
-
     # ds1 = ds1.filter(lambda x: len(x["input_ids"]) < 1024, batched=False)
     # ds1 = ds1.filter(lambda x: x['queryf'] not in gqs, batched=False)
     # ds1 = ds1.filter(lambda x: "Are there any tips in regards to teaching" in x['queryf'], batched=False)
@@ -150,7 +150,7 @@ def build_dataset_rank(
 bigtokenizer = AutoTokenizer.from_pretrained(bigname,use_fast=False)
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
-bigmodel = AutoModelForCausalLM.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
+bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
 bigmodel.eval()
 
 
@@ -165,8 +165,10 @@ bigmodel.eval()
 
 @torch.no_grad()
 def ge(data):
-    input_ids=data["input_ids"]
-    outs_big = bigmodel(input_ids.cuda(), output_hidden_states=True)
+    input_ids=data["input_ids"][0]
+    pixel_values=data["pixel_values"][0]
+    outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
+    
     hidden_state_big = outs_big.hidden_states[-1]
     max_prob_tokens_big = torch.argmax(outs_big.logits, dim=-1)
     probs = torch.softmax(outs_big.logits, dim=-1)
