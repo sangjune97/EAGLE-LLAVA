@@ -1,7 +1,7 @@
 import argparse
 
 parser = argparse.ArgumentParser(description='sp')
-parser.add_argument('--basepath', type=str, default='/home/lyh/weights/hf/vicuna_v13/7B/')
+parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/8c85e9a4d626b7b908448be32c1ba5ad79b95e76')
 parser.add_argument('--configpath', type=str, default="config.json")
 parser.add_argument('--lr', type=float, default=3e-5)
 parser.add_argument('--bs', type=int, default=4)
@@ -67,20 +67,19 @@ from transformers import get_linear_schedule_with_warmup, AutoConfig
 if accelerator.is_main_process:
     import wandb
 
-    wandb.init(project="ess", entity="yuhui-li", config=train_config)
+    wandb.init(project="ess", entity="eslab_sj", config=train_config)
 
-baseconfig = AutoConfig.from_pretrained(args.basepath)
-
+baseconfig = AutoConfig.from_pretrained(args.basepath).text_config
 head = torch.nn.Linear(baseconfig.hidden_size, baseconfig.vocab_size, bias=False)
 
 try:
     with open(os.path.join(args.basepath, "model.safetensors.index.json"), "r") as f:
         index_json = json.loads(f.read())
-        head_path = index_json["weight_map"]["lm_head.weight"]
+        head_path = index_json["weight_map"]["language_model.lm_head.weight"]
     with safe_open(os.path.join(args.basepath, head_path),
                    framework="pt",
                    device="cpu") as f:
-        tensor_slice = f.get_slice("lm_head.weight")
+        tensor_slice = f.get_slice("language_model.lm_head.weight")
         vocab_size, hidden_dim = tensor_slice.get_shape()
         tensor = tensor_slice[:, :hidden_dim].float()
 except:
@@ -319,6 +318,7 @@ if accelerator.is_main_process:
         os.makedirs(args.cpdir)
 
 config = EConfig.from_pretrained(train_config["config_path"])
+import pdb;pdb.set_trace()
 model = Model(config, load_emb=True, path=args.basepath)
 
 criterion = nn.SmoothL1Loss(reduction="none")
