@@ -79,7 +79,7 @@ def eval_model(args):
     #tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
     model = EaModel.from_pretrained(
         base_model_path=model_path,
-        ea_model_path="yuhuili/EAGLE-Vicuna-13B-v1.3",
+        ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt/state_40",
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
         device_map="auto",
@@ -108,27 +108,35 @@ def eval_model(args):
         start_time = time.time()
 
         with torch.inference_mode():
-            output_ids = model.eagenerate(
+            output_ids, _, _, avg_accept_length = model.eagenerate(
                 input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
                 attention_mask=torch.as_tensor(inputs["attention_mask"]).cuda(), 
                 pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
                 temperature=args.temperature,
                 top_p=args.top_p,
-                max_new_tokens=args.max_new_tokens,)
+                max_new_tokens=args.max_new_tokens,
+                log=True)
             
         # **시간 측정 종료**
         torch.cuda.synchronize()
         total_time = time.time() - start_time
         
         outputs = processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+        
+        num_tokens = output_ids.shape[1] - inputs["input_ids"].shape[1]
+        tok_per_sec = num_tokens/total_time
 
         ans_id = shortuuid.uuid()
+        
         ans_file.write(json.dumps({"question_id": idx,
                                    "prompt": cur_prompt,
                                    "text": outputs,
                                    "answer_id": ans_id,
                                    "model_id": model_name,
-                                   "inference_time": total_time,
+                                   "total_time": total_time,
+                                   "num_tokens": num_tokens,
+                                   "tok_per_sec": tok_per_sec,
+                                   "avg_accept_length":avg_accept_length.item(),
                                    "metadata": {}}) + "\n")
         # ans_file.flush()
     ans_file.close()

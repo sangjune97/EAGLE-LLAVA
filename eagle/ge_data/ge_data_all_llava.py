@@ -23,7 +23,15 @@ from PIL import Image
 bigname="llava-hf/llava-1.5-7b-hf"
 #bigname="lmsys/vicuna-13b-v1.5"
 
-
+def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
+    mask = input_ids != img_tok_index
+    filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
+    filtered_loss_mask = loss_mask[mask].view(1, -1).to(input_ids.device)
+    if hidden_states is not None:
+        filtered_hidden_states = hidden_states[:, mask[0], :]
+        return filtered_input_ids, filtered_loss_mask, filtered_hidden_states
+    
+    return filtered_input_ids, filtered_loss_mask
 
 
 def longest_common_prefix(list1, list2):
@@ -44,7 +52,7 @@ def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
+    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
     image_folder = '/data/COCO/train2017'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
@@ -58,6 +66,7 @@ def build_dataset_rank(
         new_examples = {
             "conversation":[],
             "input_ids": [],
+            "image": [],
             "pixel_values":[],
             "loss_mask": []
         }
@@ -84,8 +93,8 @@ def build_dataset_rank(
             image_file = examples['image'][i]
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
             inputs = processor(images=image, text=conversation, return_tensors="pt")
-            input_ids=torch.as_tensor(inputs["input_ids"])
-            pixel_values=torch.as_tensor(inputs["pixel_values"])
+            input_ids=torch.as_tensor(inputs["input_ids"])[0]
+            pixel_values=torch.as_tensor(inputs["pixel_values"])[0]
             loss_mask=torch.ones_like(input_ids)
             #print(i)
 
@@ -112,9 +121,12 @@ def build_dataset_rank(
                     # The legacy and non-legacy modes handle special tokens differently
                     instruction_len -= 1
 
+                # image token length
+                image_token_len = torch.sum(input_ids == 32000).item()
+                
                 # Ignore the user instructions
-                loss_mask[cur_len: cur_len + instruction_len] = 0
-                cur_len += turn_len
+                loss_mask[cur_len: cur_len + instruction_len + image_token_len] = 0
+                cur_len += turn_len + image_token_len
 
                 if i != 0 and not tokenizer.legacy:
                     # The legacy and non-legacy modes handle special tokens differently
@@ -126,11 +138,11 @@ def build_dataset_rank(
 
             new_examples["conversation"].append(conversation)
             new_examples["input_ids"].append(input_ids[None,:])
+            new_examples["image"].append(image_file)
             new_examples["pixel_values"].append(pixel_values[None,:])
             new_examples["loss_mask"].append(loss_mask[None,:])
 
         return new_examples
-    
     ds1 = ds1.map(
         preprocess_function,
         batched=True,
@@ -165,15 +177,14 @@ bigmodel.eval()
 
 @torch.no_grad()
 def ge(data):
-    input_ids=data["input_ids"][0]
-    pixel_values=data["pixel_values"][0]
+    input_ids=data["input_ids"]
+    pixel_values=data["pixel_values"]
+    loss_mask=data["loss_mask"]
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
-    
     hidden_state_big = outs_big.hidden_states[-1]
-    max_prob_tokens_big = torch.argmax(outs_big.logits, dim=-1)
-    probs = torch.softmax(outs_big.logits, dim=-1)
-    maxp=probs[0].max(dim=1).values
-    td={"input_ids":input_ids.cpu()[0],"hidden_state":hidden_state_big.cpu()[0],"loss_mask":data["loss_mask"].cpu()[0]}
+    filtered_input_ids, filtered_loss_mask, filtered_hidden_states = remove_image_token(input_ids, 32000, loss_mask, hidden_state_big) 
+ 
+    td={"input_ids":filtered_input_ids.cpu()[0],"image":data["image"],"hidden_state":filtered_hidden_states.cpu()[0],"loss_mask":filtered_loss_mask.cpu()[0]}
     return td
 
 outdir = f'{args.outdir}/{args.index}'

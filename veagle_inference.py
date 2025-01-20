@@ -3,16 +3,17 @@ import requests
 from transformers import AutoProcessor, LlavaForConditionalGeneration
 from eagle.model.ea_model import EaModel
 import torch
-processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-13b-hf")
+processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
 model = EaModel.from_pretrained(
-    base_model_path="llava-hf/llava-1.5-13b-hf",
-    ea_model_path="yuhuili/EAGLE-Vicuna-13B-v1.3",
+    base_model_path="llava-hf/llava-1.5-7b-hf",
+    ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt/state_40",
     torch_dtype=torch.float16,
     low_cpu_mem_usage=True,
     device_map="auto",
     total_token=-1,
 )
+#yuhuili/EAGLE-Vicuna-13B-v1.3
 model.eval()
 
 prompt = "USER: <image>\nWhat's the content of the image? explain in very detail. ASSISTANT:"
@@ -23,7 +24,7 @@ inputs = processor(images=image, text=prompt, return_tensors="pt")
 
 # Generate
 
-generate_ids, new_token, idx  = model.eagenerate(
+generate_ids, new_token, idx, avg_accept_length  = model.eagenerate(
     temperature=0,
     log=True,
     input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
@@ -33,3 +34,4 @@ generate_ids, new_token, idx  = model.eagenerate(
 output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
 print("Outputs:\n")
 print(output)
+print(avg_accept_length)

@@ -3,8 +3,9 @@ import argparse
 parser = argparse.ArgumentParser(description='sp')
 parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/8c85e9a4d626b7b908448be32c1ba5ad79b95e76')
 parser.add_argument('--configpath', type=str, default="config.json")
+parser.add_argument('--pretrainedpath', type=str, default='yuhuili/EAGLE-Vicuna-7B-v1.3')
 parser.add_argument('--lr', type=float, default=3e-5)
-parser.add_argument('--bs', type=int, default=4)
+parser.add_argument('--bs', type=int, default=1)
 parser.add_argument('--gradient-accumulation-steps', type=int, default=1)
 parser.add_argument('--tmpdir', type=str, default='0')
 parser.add_argument('--cpdir', type=str, default='0')
@@ -302,7 +303,7 @@ else:
 
 datapath = list_files(train_config["datapath"])
 
-traindatapath = datapath[:int(len(datapath) * 0.95)]
+traindatapath = datapath[:10]
 testdatapath = datapath[int(len(datapath) * 0.95):]
 
 traindataset = CustomDataset(traindatapath, transform=aug)
@@ -318,9 +319,8 @@ if accelerator.is_main_process:
         os.makedirs(args.cpdir)
 
 config = EConfig.from_pretrained(train_config["config_path"])
-import pdb;pdb.set_trace()
 model = Model(config, load_emb=True, path=args.basepath)
-
+#model = Model.from_pretrained(config, path=args.pretrainedpath)
 criterion = nn.SmoothL1Loss(reduction="none")
 optimizer = optim.AdamW(model.parameters(), lr=train_config["lr"], betas=(train_config["b1"], train_config["b2"]))
 

@@ -483,11 +483,11 @@ class Model(nn.Module):
             try:
                 with open(os.path.join(path, "model.safetensors.index.json"), "r") as f:
                     index_json = json.loads(f.read())
-                    emb_path = index_json["weight_map"]["model.embed_tokens.weight"]
+                    emb_path = index_json["weight_map"]["language_model.model.embed_tokens.weight"]
                 with safe_open(os.path.join(path, emb_path),
                                framework="pt",
                                device="cpu") as f:
-                    tensor_slice = f.get_slice("model.embed_tokens.weight")
+                    tensor_slice = f.get_slice("language_model.model.embed_tokens.weight")
                     vocab_size, hidden_dim = tensor_slice.get_shape()
                     tensor = tensor_slice[:, :hidden_dim].float()
             except:
@@ -513,7 +513,25 @@ class Model(nn.Module):
         self.logsoftmax = nn.LogSoftmax(dim=-1)
         for param in self.embed_tokens.parameters():
             param.requires_grad = False
-
+            
+    @classmethod
+    def from_pretrained(cls, config, path):
+        from huggingface_hub import hf_hub_download
+        model = cls(config)
+        try:
+            load_model_path=os.path.join(path, "pytorch_model.bin")
+            if not os.path.exists(load_model_path):
+                load_model_path=hf_hub_download(path, "pytorch_model.bin")
+            ea_layer_state_dict = torch.load(load_model_path)
+        except:
+            from safetensors.torch import load_file
+            load_model_path = os.path.join(path, "model.safetensors")
+            if not os.path.exists(load_model_path):
+                load_model_path = hf_hub_download(path, "model.safetensors")
+            ea_layer_state_dict = load_file(load_model_path)
+        model.load_state_dict(ea_layer_state_dict,strict=False)
+        return model
+    
     def init_tree(self):
         self.tree_mask_init = torch.eye(self.top_k, device=self.embed_tokens.weight.device)[None, None]
         self.position_ids = torch.zeros(self.top_k, device=self.embed_tokens.weight.device, dtype=torch.long)
@@ -674,7 +692,7 @@ class Model(nn.Module):
         input_ids = input_ids.to(hidden_states.device)
         len_posi = input_ids.shape[1]
         self.reset()
-
+        
         # with Timer("draft many"):
         if hasattr(self, "stable_kv") and self.stable_kv is not None:
             kv_len = self.stable_kv[0][0].shape[2]

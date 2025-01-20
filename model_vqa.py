@@ -5,8 +5,6 @@ import json
 from tqdm import tqdm
 import shortuuid
 import time
-from eagle.model.ea_model import EaModel
-from transformers import AutoProcessor
 
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.conversation import conv_templates, SeparatorStyle
@@ -34,18 +32,7 @@ def eval_model(args):
     disable_torch_init()
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
-    processor = AutoProcessor.from_pretrained(model_path)
-    model = EaModel.from_pretrained(
-        base_model_path=model_path,
-        ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt7b_finetune_lr1e-4/state_20",
-        torch_dtype=torch.float16,
-        low_cpu_mem_usage=True,
-        device_map="auto",
-        total_token=90,
-        depth=3
-    )
-    #yuhuili/EAGLE-Vicuna-7B-v1.3
-    model.eval()
+    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
 
     questions = [json.loads(q) for q in open(os.path.expanduser(args.question_file), "r")]
     questions = get_chunk(questions, args.num_chunks, args.chunk_idx)
@@ -57,37 +44,45 @@ def eval_model(args):
         image_file = line["image"]
         qs = line["text"]
         cur_prompt = qs
-        qs = DEFAULT_IMAGE_TOKEN + '\n' + qs
+        if model.config.mm_use_im_start_end:
+            qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
+        else:
+            qs = DEFAULT_IMAGE_TOKEN + '\n' + qs
 
         conv = conv_templates[args.conv_mode].copy()
         conv.append_message(conv.roles[0], qs)
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
 
+        input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).cuda()
+
         image = Image.open(os.path.join(args.image_folder, image_file)).convert('RGB')
-        inputs = processor(images=image, text=prompt, return_tensors='pt')
+        image_tensor = process_images([image], image_processor, model.config)[0]
 
         # **시간 측정 시작**
         torch.cuda.synchronize()
         start_time = time.time()
         
         with torch.inference_mode():
-            output_ids, _ , _ , avg_accept_length = model.eagenerate(
-                input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
-                attention_mask=torch.as_tensor(inputs["attention_mask"]).cuda(), 
-                pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
+            output_ids = model.generate(
+                input_ids,
+                images=image_tensor.unsqueeze(0).half().cuda(),
+                image_sizes=[image.size],
+                do_sample=True if args.temperature > 0 else False,
                 temperature=args.temperature,
                 top_p=args.top_p,
+                num_beams=args.num_beams,
+                # no_repeat_ngram_size=3,
                 max_new_tokens=1024,
-                log=True)
+                use_cache=True)
             
         # **시간 측정 종료**
         torch.cuda.synchronize()
         total_time = time.time() - start_time
 
-        outputs = processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+        outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
         
-        num_tokens = output_ids.shape[1] - inputs["input_ids"].shape[1]
+        num_tokens = output_ids.shape[1]
         tok_per_sec = num_tokens/total_time
 
         ans_id = shortuuid.uuid()
@@ -98,8 +93,7 @@ def eval_model(args):
                                    "model_id": model_name,
                                    "total_time": total_time,
                                    "num_tokens": num_tokens,
-                                   "tok_per_sec": tok_per_sec,   
-                                   "avg_accept_length":avg_accept_length.item(),
+                                   "tok_per_sec": tok_per_sec,
                                    "metadata": {}}) + "\n")
         ans_file.flush()
     ans_file.close()
