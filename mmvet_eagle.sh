@@ -5,7 +5,7 @@ python -m model_vqa_eagle \
     --model-path llava-hf/llava-1.5-7b-hf \
     --question-file /home/sangjun/LLaVA/playground/data/eval/mm-vet/llava-mm-vet.jsonl \
     --image-folder /home/sangjun/LLaVA/playground/data/eval/mm-vet/images \
-    --answers-file /home/sangjun/EAGLE-LLAVA/ckpt7b_finetune_lr1e-4/state_20/test.jsonl \
+    --answers-file /home/sangjun/EAGLE-LLAVA/ckpt/im_tok4/state_98/test.jsonl \
     --temperature 0 \
     --conv-mode vicuna_v1
 

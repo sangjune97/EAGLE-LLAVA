@@ -506,7 +506,6 @@ class Model(nn.Module):
         # print("depth",depth)
         # print("top_k",top_k)
         # print("threshold",threshold)
-
         self.layers = nn.ModuleList([LlamaDecoderLayer(config, index) for index in range(config.num_hidden_layers)])
         self.fc = nn.Linear(2 * config.hidden_size, config.hidden_size, bias=bias)
         self.act = ACT2FN[config.hidden_act]
@@ -584,21 +583,32 @@ class Model(nn.Module):
             output_attentions: Optional[bool] = None,
             output_hidden_states: Optional[bool] = None,
             return_dict: Optional[bool] = None,
-            std=None
+            std=None,
+            image_features: Optional[torch.FloatTensor] = None,
     ):
-        
         batch_size, seq_length, _ = hidden_states.shape
         seq_length_with_past = seq_length
         past_key_values_length = 0
 
         with torch.no_grad():
             inputs_embeds = self.embed_tokens(input_ids)
-            # inputs_embeds = inputs_embeds.detach()
-
-        # if std is not None:
-        #     noise = torch.randn(inputs_embeds.size(),device=inputs_embeds.device) * std
-        #     inputs_embeds=inputs_embeds+noise
-
+            if image_features is not None:
+                n_image_tokens = (input_ids == 32000).sum(dim=-1)[0].item()
+                n_image_features = image_features.shape[1]
+                if n_image_tokens != n_image_features:
+                    image_features = None
+                    #raise ValueError(
+                    #    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
+                    #)
+                else :
+                    special_image_mask = (
+                        (input_ids == 32000)
+                        .unsqueeze(-1)
+                        .expand_as(inputs_embeds)
+                        .to(inputs_embeds.device)
+                    )
+                    image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
+                    inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
@@ -676,8 +686,10 @@ class Model(nn.Module):
         self.stable_kv = None
 
     @torch.no_grad()
-    def topK_genrate(self, hidden_states, input_ids, head, logits_processor):
+    def topK_genrate(self, hidden_states, input_ids, head, logits_processor, image_features=None):
+        
         input_ids = input_ids.to(hidden_states.device)
+        image_features = image_features
         total_tokens = self.total_tokens
         depth = self.depth
         top_k = self.top_k
@@ -699,7 +711,7 @@ class Model(nn.Module):
             out_hidden, past_key_values = self(hidden_states, input_ids=input_ids[:, kv_len:],
                                                past_key_values=self.stable_kv, use_cache=True)
         else:
-            out_hidden, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True)
+            out_hidden, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True,image_features=image_features)
         self.stable_kv = past_key_values
         last_hidden = out_hidden[:, -1]
         if not self.diff_device:
@@ -728,7 +740,6 @@ class Model(nn.Module):
             self.tree_mask = tree_mask
             position_ids = len_posi + self.position_ids
             # with Timer("draft one"):
-            
             out_hidden, past_key_values = self(input_hidden, input_ids=input_ids, past_key_values=past_key_values,
                                                position_ids=position_ids, use_cache=True)
             len_posi += 1

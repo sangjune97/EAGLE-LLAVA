@@ -184,7 +184,6 @@ class EaModel(nn.Module):
             position_ids=None,
             
     ):
-
         with torch.inference_mode():
             # Pass input through the base model
             outputs = self.base_model(
@@ -193,11 +192,21 @@ class EaModel(nn.Module):
                 attention_mask=attention_mask,
                 past_key_values=past_key_values,
                 position_ids=position_ids,
+                output_hidden_states=True
             )
             if output_orig:
                 orig = outputs[0]
             hidden_states = outputs[2][-1]
-
+            #outputs2 = self.base_model.language_model.model(
+            #    input_ids=input_ids,
+            #    attention_mask=attention_mask,
+            #    past_key_values=past_key_values,
+            #    position_ids=position_ids,
+            #)
+            #if output_orig:
+            #    orig2 = self.base_model.language_model.lm_head(outputs2[0])
+            #hidden_states2 = outputs2[0]
+        
         if output_orig:
             return outputs, orig, hidden_states
         else:
@@ -208,7 +217,6 @@ class EaModel(nn.Module):
             self,
             input_ids,
             pixel_values,
-            attention_mask,
             temperature=0.0,
             top_p=0.0,
             top_k=0.0,
@@ -219,6 +227,7 @@ class EaModel(nn.Module):
             
 
     ):
+        tokenizer = AutoTokenizer.from_pretrained('lmsys/vicuna-7b-v1.3')
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
         max_length=max_length-self.ea_layer.total_tokens-10
@@ -254,7 +263,7 @@ class EaModel(nn.Module):
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
         draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
-            input_ids, self, pixel_values, attention_mask, past_key_values, logits_processor
+            input_ids, self, pixel_values, past_key_values, logits_processor
         )
         new_token = 0
         
@@ -269,12 +278,10 @@ class EaModel(nn.Module):
             draft_tokens=draft_tokens.to(input_ids.device)
 
             #with Timer("tree_decoding"):
-            
             logits, hidden_state_new, outputs = tree_decoding(
                 self,
                 draft_tokens,
                 pixel_values,
-                attention_mask,
                 past_key_values,
                 tree_position_ids,
                 input_ids,
@@ -287,6 +294,7 @@ class EaModel(nn.Module):
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
+            
             
             # accept_length 값을 리스트에 추가
             accept_lengths.append(accept_length)
@@ -590,6 +598,36 @@ class EaModel(nn.Module):
                 break
             if input_ids.shape[1] > max_length:
                 break
+            
+    def get_image_features(
+            self, pixel_values: torch.FloatTensor):
+            """
+            Obtains image last hidden states from the vision tower and apply multimodal projection.
 
+            Args:
+                pixel_values (`torch.FloatTensor]` of shape `(batch_size, channels, height, width)`)
+                   The tensors corresponding to the input images.
+                vision_feature_layer (`int`):
+                    The index of the layer to select the vision feature.
+                vision_feature_select_strategy (`str`):
+                    The feature selection strategy used to select the vision feature from the vision backbone.
+                    Can be one of `"default"` or `"full"`
+            Returns:
+                image_features (`torch.Tensor`): Image feature tensor of shape `(num_images, image_length, embed_dim)`).
+            """
+            vision_feature_layer = self.base_model.config.vision_feature_layer
+            vision_feature_select_strategy = self.base_model.config.vision_feature_select_strategy
+            image_outputs = self.base_model.vision_tower(pixel_values, output_hidden_states=True)
+            # this is not memory efficient at all (output_hidden_states=True) will save all the hidden stated.
+            selected_image_feature = image_outputs.hidden_states[vision_feature_layer]
+            if vision_feature_select_strategy == "default":
+                selected_image_feature = selected_image_feature[:, 1:]
+            elif vision_feature_select_strategy == "full":
+                selected_image_feature = selected_image_feature
+            else:
+                raise ValueError(f"Unexpected select feature strategy: {self.config.vision_feature_select_strategy}")
+            image_features = self.base_model.multi_modal_projector(selected_image_feature)
+            
+            return image_features
 
 

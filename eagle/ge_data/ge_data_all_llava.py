@@ -22,7 +22,7 @@ from PIL import Image
 
 bigname="llava-hf/llava-1.5-7b-hf"
 #bigname="lmsys/vicuna-13b-v1.5"
-
+        
 def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
     mask = input_ids != img_tok_index
     filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
@@ -62,6 +62,28 @@ def build_dataset_rank(
     ds1 = ds.select(range(args.start, args.end))
     original_columns1 = ds1.column_names
     num_proc = 4
+    
+    def colorize_text(input_ids, loss_mask, tokenizer):
+        # input_ids를 텍스트로 변환
+        tokens = tokenizer.convert_ids_to_tokens(input_ids)
+
+        # 텍스트와 loss_mask를 이용하여 색상 적용
+        colored_text = ""
+        for token, mask in zip(tokens, loss_mask):
+            if mask == 1:
+                # loss_mask가 1인 토큰은 초록색
+                colored_text += "\033[92m" + token + "\033[0m" + " "
+            else:
+                # loss_mask가 0인 토큰은 빨간색
+                colored_text += "\033[91m" + token + "\033[0m" + " "
+
+        print(colored_text)
+    
+    def contains_special_token(turn, tokenizer, special_token_id=32000):
+        input_ids = tokenizer(turn).input_ids
+
+        return special_token_id in input_ids
+
     def preprocess_function(examples):
         new_examples = {
             "conversation":[],
@@ -71,24 +93,19 @@ def build_dataset_rank(
             "loss_mask": []
         }
         for i in range(len(examples['id'])):
-            conv = get_conversation_template("vicuna")
+            conv = get_conversation_template("vicuna_v1")
             roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-            source= examples['conversations'][i]
-            if roles[source[0]["from"]] != conv.roles[0]:
+            sorce= examples['conversations'][i]
+            
+            if roles[sorce[0]["from"]] != conv.roles[0]:
                 # Skip the first one if it is not from human
-                source = source[1:]
+                sorce = sorce[1:]
             conv.messages = []
-            for j, sentence in enumerate(source):
+            for j, sentence in enumerate(sorce):
                 role = roles[sentence["from"]]
                 assert role == conv.roles[j % 2], f"{i}"
                 conv.append_message(role, sentence["value"])
             conversation=conv.get_prompt()
-            #input_ids = tokenizer(
-            #    conversation,
-            #    return_tensors="pt",
-            #    max_length=tokenizer.model_max_length,
-            #    truncation=True,
-            #).input_ids[0]
             
             image_file = examples['image'][i]
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
@@ -101,14 +118,17 @@ def build_dataset_rank(
             sep = conv.sep + conv.roles[1] + ": "
 
             total_len = int(input_ids.ne(tokenizer.pad_token_id).sum())
-
+            
             turns = conversation.split(conv.sep2)
+            
             cur_len = 1
             loss_mask[:cur_len] = 0
             for i, turn in enumerate(turns):
                 if turn == "":
                     break
+                is_im_token = contains_special_token(turn,tokenizer)
                 turn_len = len(tokenizer(turn).input_ids)
+                if is_im_token : turn_len+=576
 
                 parts = turn.split(sep)
                 if len(parts) != 2:
@@ -116,23 +136,21 @@ def build_dataset_rank(
                 parts[0] += sep
                 # "-2" is hardcoded for the Llama tokenizer to make the offset correct.
                 instruction_len = len(tokenizer(parts[0]).input_ids) - 2
-
-                if i != 0 and not tokenizer.legacy:
-                    # The legacy and non-legacy modes handle special tokens differently
+                if is_im_token : instruction_len+=576
+                
+                if i==0:
                     instruction_len -= 1
 
                 # image token length
-                image_token_len = torch.sum(input_ids == 32000).item()
+                
                 
                 # Ignore the user instructions
-                loss_mask[cur_len: cur_len + instruction_len + image_token_len] = 0
-                cur_len += turn_len + image_token_len
-
-                if i != 0 and not tokenizer.legacy:
-                    # The legacy and non-legacy modes handle special tokens differently
+                loss_mask[cur_len: cur_len + instruction_len] = 0
+                cur_len += turn_len
+                if i==0:
                     cur_len -= 1
-
             loss_mask[cur_len:] = 0
+            
 
 
 
@@ -159,10 +177,11 @@ def build_dataset_rank(
     # dst.set_format(type="torch")
     return ds1
 
-bigtokenizer = AutoTokenizer.from_pretrained(bigname,use_fast=False)
+bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
+
 bigmodel.eval()
 
 
@@ -181,10 +200,10 @@ def ge(data):
     pixel_values=data["pixel_values"]
     loss_mask=data["loss_mask"]
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
+    image_features = outs_big.image_hidden_states
     hidden_state_big = outs_big.hidden_states[-1]
-    filtered_input_ids, filtered_loss_mask, filtered_hidden_states = remove_image_token(input_ids, 32000, loss_mask, hidden_state_big) 
- 
-    td={"input_ids":filtered_input_ids.cpu()[0],"image":data["image"],"hidden_state":filtered_hidden_states.cpu()[0],"loss_mask":filtered_loss_mask.cpu()[0]}
+    import pdb;pdb.set_trace()
+    td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu()[0],"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()[0]}
     return td
 
 outdir = f'{args.outdir}/{args.index}'
@@ -199,7 +218,7 @@ def writedata(name,data_point):
     torch.save(data_point, f'{name}/data_{idx}.ckpt')
 
 
-for data in ds:
+for data in tqdm(ds):
     outdata = ge(data)
     writedata(outdir,outdata)
 

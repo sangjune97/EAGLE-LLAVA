@@ -383,15 +383,17 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         pixel_values: torch.FloatTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_values = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
-        vision_feature_layer: Optional[int] = None,
+        vision_feature_layer: Optional[Union[int, List[int]]] = None,
         vision_feature_select_strategy: Optional[str] = None,
         labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        logits_to_keep: Union[int, torch.Tensor] = 0,
     ) -> Union[Tuple, LlavaCausalLMOutputWithPast]:
         r"""
         Args:
@@ -399,6 +401,14 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
                 Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
                 config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
                 (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
+
+            logits_to_keep (`int` or `torch.Tensor`, *optional*):
+                If an `int`, compute logits for the last `logits_to_keep` tokens. If `0`, calculate logits for all
+                `input_ids` (special case). Only last token logits are needed for generation, and calculating them only for that
+                token can save memory, which becomes pretty significant for long sequences or large vocabulary size.
+                If a `torch.Tensor`, must be 1D corresponding to the indices to keep in the sequence length dimension.
+                This is useful when using packed tensor format (single dimension for batch and sequence length).
+
 
         Returns:
 
@@ -412,19 +422,23 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         >>> model = LlavaForConditionalGeneration.from_pretrained("llava-hf/llava-1.5-7b-hf")
         >>> processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
-        >>> prompt = "<image>\nUSER: What's the content of the image?\nASSISTANT:"
+        >>> prompt = "USER: <image>\nWhat's the content of the image? ASSISTANT:"
         >>> url = "https://www.ilankelman.org/stopsigns/australia.jpg"
         >>> image = Image.open(requests.get(url, stream=True).raw)
 
-        >>> inputs = processor(text=prompt, images=image, return_tensors="pt")
+        >>> inputs = processor(images=image, text=prompt, return_tensors="pt")
 
         >>> # Generate
-        >>> generate_ids = model.generate(**inputs, max_length=30)
+        >>> generate_ids = model.generate(**inputs, max_new_tokens=15)
         >>> processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        "\nUSER: What's the content of the image?\nASSISTANT: The image features a stop sign on a street corner"
+        "USER:  \nWhat's the content of the image? ASSISTANT: The image features a busy city street with a stop sign prominently displayed"
         ```"""
+        
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = True
+
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         vision_feature_layer = (
             vision_feature_layer if vision_feature_layer is not None else self.config.vision_feature_layer
@@ -442,16 +456,9 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
             raise ValueError(
                 "You cannot specify both pixel_values and inputs_embeds at the same time, and must specify either one"
             )
-        legacy_processing = False
+
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
-
-            # if the number of image tokens is more than image embeddings seq length, then prob we expanded it in processing
-            # not very reliable, but we don't expect one to actually pass 500+ images for one prompt
-            # In case we're in decoding stage, legacy behavior is checked by presence of pixel values even if use_cache=True
-            legacy_processing = (
-                (input_ids == self.config.image_token_index).sum(1).max() < self.config.image_seq_length
-            ) or (input_ids.shape[-1] == 1 and pixel_values is not None)
 
         if pixel_values is not None:
             image_features = self.get_image_features(
@@ -460,57 +467,16 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
                 vision_feature_select_strategy=vision_feature_select_strategy,
             )
 
-            if legacy_processing:
-                # Retrieve the first layer to inspect the logits and mask out the hidden states
-                # that are set to 0
-                first_layer_past_key_value = past_key_values[0][0].data[:, :, :past_key_values[0][0].current_length, 0]
-
-                # Sum all dimensions of head_dim (-2) to avoid random errors such as: https://github.com/huggingface/transformers/pull/28032#issuecomment-1863691941
-                batch_index, non_attended_tokens = torch.where(first_layer_past_key_value.float().sum(-2) == 0)
-
-                # Get the target length
-                target_length = input_ids.shape[1]
-                past_length = first_layer_past_key_value.shape[-1]
-
-                extended_attention_mask = torch.ones(
-                    (attention_mask.shape[0], past_length),
-                    dtype=attention_mask.dtype,
-                    device=attention_mask.device,
+            n_image_tokens = (input_ids == self.config.image_token_index).sum().item()
+            n_image_features = image_features.shape[0] * image_features.shape[1]
+            if n_image_tokens != n_image_features:
+                raise ValueError(
+                    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
                 )
-
-                # Filter out only the tokens that can be un-attended, this can happen
-                # if one uses Llava + Fused modules where the cache on the
-                # first iteration is already big enough, or if one passes custom cache
-                valid_indices = non_attended_tokens < extended_attention_mask.size(-1)
-                new_batch_index = batch_index[valid_indices]
-                new_non_attended_tokens = non_attended_tokens[valid_indices]
-
-                # Zero-out the places where we don't need to attend
-                extended_attention_mask[new_batch_index, new_non_attended_tokens] = 0
-
-                attention_mask = torch.cat((extended_attention_mask, attention_mask[:, -target_length:]), dim=1)
-                #position_ids = torch.sum(attention_mask, dim=1).unsqueeze(-1) - 1
-                cache_position = torch.arange(attention_mask.shape[1], device=attention_mask.device)[
-                    -target_length:
-                ]
-
-            # TODO: @raushan retain only the new behavior after v4.47
-            else:
-                n_image_tokens = (input_ids == self.config.image_token_index).sum(dim=-1)[0].item()
-                n_image_features = image_features.shape[1]
-                if n_image_tokens != n_image_features:
-                    raise ValueError(
-                        f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                    )
-                special_image_mask = (
-                    (input_ids == self.config.image_token_index)
-                    .unsqueeze(-1)
-                    .expand_as(inputs_embeds)
-                    .to(inputs_embeds.device)
-                )
-                image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
-                inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
-
+            special_image_mask = (input_ids == self.config.image_token_index).unsqueeze(-1)
+            special_image_mask = special_image_mask.expand_as(inputs_embeds).to(inputs_embeds.device)
+            image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
+            inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
         outputs = self.language_model(
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -528,7 +494,9 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         if labels is not None:
             # Shift so that tokens < n predict n
             if attention_mask is not None:
-                shift_attention_mask = attention_mask[..., 1:]
+                # we use the input attention mask to shift the logits and labels, because it is 2D.
+                # we also crop attn mask in case it is longer, which happens in PrefixTuning with peft
+                shift_attention_mask = attention_mask[:, -(logits.shape[1] - 1) :].to(logits.device)
                 shift_logits = logits[..., :-1, :][shift_attention_mask.to(logits.device) != 0].contiguous()
                 shift_labels = labels[..., 1:][shift_attention_mask.to(labels.device) != 0].contiguous()
             else:
@@ -543,67 +511,44 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
-
         return LlavaCausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            image_hidden_states=image_features if pixel_values is not None else None,
         )
 
     def prepare_inputs_for_generation(
-        self, input_ids, past_key_values=None, inputs_embeds=None, pixel_values=None, attention_mask=None, **kwargs
+        self,
+        input_ids,
+        past_key_values=None,
+        inputs_embeds=None,
+        pixel_values=None,
+        attention_mask=None,
+        cache_position=None,
+        logits_to_keep=None,
+        **kwargs,
     ):
-        if past_key_values is not None:
-            if isinstance(past_key_values, Cache):
-                cache_length = past_key_values.get_seq_length()
-                past_length = past_key_values.seen_tokens
-            else:
-                cache_length = past_length = past_key_values[0][0].shape[2]
+        # Overwritten -- in specific circumstances we don't want to forward image inputs to the model
 
-            # Keep only the unprocessed tokens:
-            # 1 - If the length of the attention_mask exceeds the length of input_ids, then we are in a setting where
-            # some of the inputs are exclusively passed as part of the cache (e.g. when passing input_embeds as
-            # input)
-            if attention_mask is not None and attention_mask.shape[1] > input_ids.shape[1]:
-                input_ids = input_ids[:, -(attention_mask.shape[1] - past_length) :]
-            # 2 - If the past_length is smaller than input_ids', then input_ids holds all input tokens. We can discard
-            # input_ids based on the past_length.
-            elif past_length < input_ids.shape[1]:
-                input_ids = input_ids[:, past_length:]
-            # 3 - Otherwise (past_length >= input_ids.shape[1]), let's assume input_ids only has unprocessed tokens.
-            elif self.config.image_token_index in input_ids:
-                input_ids = input_ids[:, input_ids.shape[1] - 1 :]
-            # If the cache has seen more tokens than it can hold, then the cache has a size limit. Let's discard the
-            # older attention values, as their corresponding values are not part of the input.
-            if cache_length < past_length and attention_mask is not None:
-                attention_mask = attention_mask[:, -(cache_length + input_ids.shape[1]) :]
-
-        position_ids = kwargs.get("position_ids", None)
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -input_ids.shape[1] :]
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "attention_mask": attention_mask,
-                "pixel_values": pixel_values,
-            }
+        model_inputs = self.language_model.prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            cache_position=cache_position,
+            logits_to_keep=logits_to_keep,
+            **kwargs,
         )
+
+        if cache_position[0] == 0:
+            # If we're in cached decoding stage, pixel values should be None because input ids do not contain special image token anymore
+            # Otherwise we need pixel values to be passed to model
+            model_inputs["pixel_values"] = pixel_values
+
         return model_inputs
 
-    def _reorder_cache(self, *args, **kwargs):
-        return self.language_model._reorder_cache(*args, **kwargs)
+
+__all__ = ["LlavaForConditionalGeneration", "LlavaPreTrainedModel"]

@@ -37,12 +37,12 @@ def eval_model(args):
     processor = AutoProcessor.from_pretrained(model_path)
     model = EaModel.from_pretrained(
         base_model_path=model_path,
-        ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt7b_finetune_lr1e-4/state_20",
+        ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt/im_tok4/state_60",
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
         device_map="auto",
-        total_token=90,
-        depth=3
+        total_token=60,
+        depth=5
     )
     #yuhuili/EAGLE-Vicuna-7B-v1.3
     model.eval()
@@ -58,7 +58,6 @@ def eval_model(args):
         qs = line["text"]
         cur_prompt = qs
         qs = DEFAULT_IMAGE_TOKEN + '\n' + qs
-
         conv = conv_templates[args.conv_mode].copy()
         conv.append_message(conv.roles[0], qs)
         conv.append_message(conv.roles[1], None)

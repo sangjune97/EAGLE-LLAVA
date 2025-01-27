@@ -1,16 +1,17 @@
 from PIL import Image
 import requests
+import inspect
 from transformers import AutoProcessor, AutoTokenizer, LlavaForConditionalGeneration
-
 model = LlavaForConditionalGeneration.from_pretrained("llava-hf/llava-1.5-7b-hf", device_map="auto")
 processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 tokenizer = AutoTokenizer.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
 prompt = "USER: <image>\nWhat's the content of the image? explain in very detail. ASSISTANT:"
-url = "https://i.namu.wiki/i/brFxhpvr8i82QGYJvQVOY-GJOR0n7ewuok48ldu8ZB1PxB5u0zkHAB6CdRxIIdMaifXRyFhz5aEt_NEhAa_nXsOiCc9fz-xuQUwx9tSPo8ej8q1BSU1m9qDpLdI1fAXHDxmK1ZDFLOsjxs2UdvV9Hw.webp"
+url = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Cat_August_2010-4.jpg/800px-Cat_August_2010-4.jpg"
 image = Image.open(requests.get(url, stream=True).raw)
 
 inputs = processor(images=image, text=prompt, return_tensors="pt")
+print(inputs["input_ids"])
 # Generate
 generate_ids = model.generate(
     temperature=0.9,

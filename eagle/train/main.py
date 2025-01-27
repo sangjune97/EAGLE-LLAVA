@@ -3,9 +3,10 @@ import argparse
 parser = argparse.ArgumentParser(description='sp')
 parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/8c85e9a4d626b7b908448be32c1ba5ad79b95e76')
 parser.add_argument('--configpath', type=str, default="config.json")
-parser.add_argument('--pretrainedpath', type=str, default='yuhuili/EAGLE-Vicuna-7B-v1.3')
+parser.add_argument('--pretrainedpath', type=str, default='/home/sangjun/EAGLE-LLAVA/ckpt/finetune/state_100')
 parser.add_argument('--lr', type=float, default=3e-5)
-parser.add_argument('--bs', type=int, default=1)
+parser.add_argument('--bs', type=int, default=4 )
+parser.add_argument('--epoch', type=int, default=20)
 parser.add_argument('--gradient-accumulation-steps', type=int, default=1)
 parser.add_argument('--tmpdir', type=str, default='0')
 parser.add_argument('--cpdir', type=str, default='0')
@@ -17,14 +18,14 @@ train_config = {
     "gradient_accumulation_steps": args.gradient_accumulation_steps,
     "datapath": f"{args.tmpdir}",
     "is_warmup": True,
-    "num_epochs": 20,
+    "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
     "num_warmup_steps": 2000,
     "total_steps": 800000,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
-    "num_workers": 2,
+    "num_workers": 8,
     "embeding": True,
     "act": "No",
     "data_noise": True,
@@ -32,7 +33,8 @@ train_config = {
     "mean": 0.0,
     "std": 0.2,
     "residual": "true,norm",
-    "max_len": 2048,
+    "max_len": 4096,
+    #"max_len": 2048,
     # During training, truncating the training sequences means that the larger the setting, the more training data is used, and the better the effect, but it also consumes more VRAM.
     "config_path": args.configpath,
     "b1": 0.9,
@@ -63,7 +65,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 # import accelerate
 import numpy as np
-from transformers import get_linear_schedule_with_warmup, AutoConfig
+from transformers import get_linear_schedule_with_warmup, AutoConfig, LlavaForConditionalGeneration
 
 if accelerator.is_main_process:
     import wandb
@@ -72,7 +74,6 @@ if accelerator.is_main_process:
 
 baseconfig = AutoConfig.from_pretrained(args.basepath).text_config
 head = torch.nn.Linear(baseconfig.hidden_size, baseconfig.vocab_size, bias=False)
-
 try:
     with open(os.path.join(args.basepath, "model.safetensors.index.json"), "r") as f:
         index_json = json.loads(f.read())
@@ -141,11 +142,12 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, index):
         # try:
-        data = torch.load(self.data[index])
+        data = torch.load(self.data[index],weights_only=True)
         new_data = {}
         hidden_state = data['hidden_state'][:train_config["max_len"]][None, :]
         input_ids = data['input_ids'][:train_config["max_len"]][None, :]
         loss_mask = data["loss_mask"][:train_config["max_len"]][None, :]
+        image_features = data["image_features"][:train_config["max_len"]][None, :]
 
 
         length = hidden_state.shape[1]
@@ -167,6 +169,7 @@ class CustomDataset(Dataset):
         new_data["target"] = target
         new_data["hidden_state_big"] = hidden_state
         new_data["input_ids"] = input_ids_target
+        new_data["image_features"] = image_features
 
 
         if self.transform:
@@ -190,10 +193,12 @@ class DataCollatorWithPadding:
         outtensors = torch.cat((intensors, padding_tensor), dim=1)
         return outtensors
 
+
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
         max_length = max(item['hidden_state_big'].shape[1] for item in features)
         batch_input_ids = torch.cat([self.paddingtensor2D(item['input_ids'], max_length) for item in features])
         batch_hidden_states = torch.cat([self.paddingtensor(item['hidden_state_big'], max_length) for item in features])
+        batch_image_features = torch.cat([item['image_features'] for item in features])
         batch_target = torch.cat([self.paddingtensor(item['target'], max_length) for item in features])
         batch_loss_mask = torch.tensor(
             [item['loss_mask'] + [0] * (max_length - len(item['loss_mask'])) for item in features])
@@ -207,10 +212,11 @@ class DataCollatorWithPadding:
             "target": batch_target,
             "attention_mask": batch_attention_mask,
             "loss_mask": batch_loss_mask,
+            "image_features": batch_image_features,
+            
         }
         return batch
-
-
+        
 def top_accuracy(output, target, topk=(1,)):
     # output.shape (bs, num_classes), target.shape (bs, )
     """Computes the accuracy over the k top predictions for the specified values of k"""
@@ -242,20 +248,19 @@ def getkacc(model, data, head, max_length=5):
     def generate(hidden_states, input_ids, head, max_length=4, use_cache=True):
         if use_cache:
             past_key_values = None
+            image_features = None
             for i in range(max_length):
-                if past_key_values != None:
+                if past_key_values is not None:
                     out_hidden, past_key_values = model(last_hidden, input_ids=token, past_key_values=past_key_values,
                                                         use_cache=True)
                 else:
-                    out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True)
+                    out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True, image_features=image_features)
                 last_hidden = out_hidden[:, -1:]
                 last_headout = head(last_hidden)
                 token = torch.argmax(last_headout, dim=-1)
                 input_ids = torch.cat((input_ids, token), dim=1)
-
         else:
             raise NotImplementedError
-
         return input_ids
 
     hidden_states = data["hidden_states"]
@@ -277,9 +282,7 @@ def getkacc(model, data, head, max_length=5):
         generate_ids = outs[:, pre_len:]
         for bid in range(bs):
             for k in range(max_length):
-                if loss_mask[bid, pre_len + k] == 0:
-                    break
-                if pre_len + k >= seq_len:
+                if pre_len + k >= seq_len or loss_mask[bid, pre_len + k] == 0:
                     break
                 total[k] += 1
                 if generate_ids[bid, k] == target_ids[bid, pre_len + k - 1]:
@@ -289,7 +292,7 @@ def getkacc(model, data, head, max_length=5):
                         total[kk] += 1
                     break
 
-    acc = [correct[i] / total[i] for i in range(len(correct))]
+    acc = [correct[i] / total[i] if total[i] > 0 else 0 for i in range(len(correct))]
     return acc
 
 
@@ -303,7 +306,7 @@ else:
 
 datapath = list_files(train_config["datapath"])
 
-traindatapath = datapath[:10]
+traindatapath = datapath[:int(len(datapath) * 0.95)]
 testdatapath = datapath[int(len(datapath) * 0.95):]
 
 traindataset = CustomDataset(traindatapath, transform=aug)
@@ -341,18 +344,18 @@ else:
         model, head, optimizer, train_loader, test_loader
     )
 # accelerator.load_state("checkpoints/state_5")
-for epoch in range(num_epochs + 1):
+for epoch in tqdm(range(num_epochs + 1)):
     top_3acc = [0 for _ in range(3)]
     correct = 0
     total = 0
     epoch_loss = 0
     num_batches = 0
     model.train()
-    for batch_idx, data in enumerate(tqdm(train_loader)):
+    for batch_idx, data in enumerate(train_loader):
 
         with accelerator.accumulate(model):
             optimizer.zero_grad()
-            predict = model(data["hidden_states"], input_ids=data["input_ids"], attention_mask=data["attention_mask"])
+            predict = model(data["hidden_states"], input_ids=data["input_ids"], attention_mask=data["attention_mask"], image_features=data["image_features"])
             with torch.no_grad():
                 target_head = head(data["target"])
                 target_p = nn.Softmax(dim=2)(target_head)
@@ -414,14 +417,15 @@ for epoch in range(num_epochs + 1):
         model.eval()
 
         k_acc = [[] for i in range(5)]
-        for batch_idx, data in enumerate(tqdm(test_loader)):
+        for batch_idx, data in enumerate(test_loader):
             with torch.no_grad():
                 if batch_idx < 10:
                     acces = getkacc(model, data, head, max_length=5)
                     for i in range(len(acces)):
                         k_acc[i].append(acces[i])
+                image_features = data["image_features"]
                 predict = model(data["hidden_states"], input_ids=data["input_ids"],
-                                attention_mask=data["attention_mask"])
+                                attention_mask=data["attention_mask"], image_features=image_features)
                 target_head = head(data["target"])
                 target_p = nn.Softmax(dim=2)(target_head)
                 target_p = target_p.detach()
