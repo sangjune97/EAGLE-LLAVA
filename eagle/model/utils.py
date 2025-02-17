@@ -238,6 +238,21 @@ def remove_image_token(input_ids, img_tok_index, hidden_states=None):
     
     return filtered_input_ids
 
+def pool_image_token(input_ids, img_tok_index, hidden_states=None):
+    mask = input_ids != img_tok_index
+    filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
+    if hidden_states is not None:
+        filtered_hidden_states = hidden_states[:, mask[0], :]
+        return filtered_input_ids, filtered_hidden_states
+    
+    return filtered_input_ids
+
+def nothing_image_token(input_ids, img_tok_index, hidden_states=None):
+    if hidden_states is not None:
+        return input_ids, hidden_states
+    
+    return input_ids
+
 def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_processor):
     outputs, orig, hidden_states = model(
         input_ids, pixel_values, past_key_values=past_key_values, output_orig=True
@@ -254,16 +269,14 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
     else:
         token = torch.argmax(orig[:, -1])
         token = token[None, None]
-    input_ids = torch.cat((input_ids, token.to(input_ids.device)), dim=1)
-    #input_ids, hidden_states = remove_image_token(input_ids, model.base_model.config.image_token_index, hidden_states)
-    #input_ids = torch.cat((input_ids, token.to(input_ids.device)), dim=1)
-    
     ea_layer_device = model.ea_layer.fc.weight.device
-    input_ids = input_ids.to(ea_layer_device)
-    hidden_states = hidden_states.to(ea_layer_device)
+    filtered_input_ids, filtered_hidden_states = nothing_image_token(input_ids, model.base_model.config.image_token_index, hidden_states)
+    filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
+    filtered_input_ids = filtered_input_ids.to(ea_layer_device)
+    filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
     # Clone the output hidden states
     
-    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(hidden_states, input_ids, model.base_model.language_model.lm_head,logits_processor,image_features)
+    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(filtered_hidden_states, filtered_input_ids, model.base_model.language_model.lm_head,logits_processor,image_features)
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, orig, hidden_states, token
 
 
@@ -475,13 +488,13 @@ def update_inference_inputs(
     ea_layer_device = model.ea_layer.fc.weight.device
 
     input_ids = input_ids.to(ea_layer_device)
-    #filtered_input_ids=remove_image_token(input_ids, model.base_model.config.image_token_index)
-    #filtered_input_ids = filtered_input_ids.to(ea_layer_device)
+    filtered_input_ids = nothing_image_token(input_ids, model.base_model.config.image_token_index)
+    filtered_input_ids = filtered_input_ids.to(ea_layer_device)
+    filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)
     
     draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(accept_hidden_state_new,
-                                              input_ids=torch.cat((input_ids, token.to(input_ids.device)), dim=1),
-                                              head=model.base_model.language_model.lm_head,logits_processor=logits_processor)
+                                              input_ids=filtered_input_ids, head=model.base_model.language_model.lm_head,logits_processor=logits_processor)
 
 
     new_token += accept_length + 1

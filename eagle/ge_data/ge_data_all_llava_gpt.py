@@ -84,7 +84,6 @@ def build_dataset_rank(
 ):
     processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
     
-    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
     ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
     ds = ds['train']
     ds = ds.shuffle(seed=42)

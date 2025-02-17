@@ -570,6 +570,39 @@ class Model(nn.Module):
                 ] = torch.finfo(torch.float32).min
 
         return combined_attention_mask
+    
+    def pool_tensor(self, input_tensor):
+        # 입력 텐서의 형태를 [1, 24, 24, 4096]으로 변경
+        reshaped_tensor = input_tensor.reshape(24, 24, 4096)
+
+        # 차원을 (배치 크기, 채널, 높이, 너비)로 변환
+        corrected_tensor = reshaped_tensor.permute(2, 0 ,1)  # 이제 (1, 4096, 24, 24) 형태
+
+        # 최대 풀링 적용
+        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
+
+        # pooled_tensor를 [1, 144, 4096]으로 다시 변환
+        reshaped_back_tensor = pooled_tensor.reshape(144, 4096)
+
+        return reshaped_back_tensor
+    
+    def find_sequence_boundaries(self, tensor, value=32000):
+        # 텐서를 1D로 변환 (필요시)
+        tensor = tensor.flatten()
+
+        # 지정 값이 시작하고 끝나는 지점 찾기
+        is_value = tensor == value
+        shifted_right = torch.cat((torch.tensor([False]), is_value[:-1]))
+        shifted_left = torch.cat((is_value[1:], torch.tensor([False])))
+
+        # 시작점: 현재는 True이고, 이전은 False인 위치
+        start_indices = (is_value & ~shifted_right).nonzero(as_tuple=True)[0]
+        # 종료점: 현재는 True이고, 다음은 False인 위치
+        end_indices = (is_value & ~shifted_left).nonzero(as_tuple=True)[0] + 1
+        
+
+        return start_indices, end_indices
+
 
     def forward(
             self,
@@ -586,10 +619,6 @@ class Model(nn.Module):
             std=None,
             image_features: Optional[torch.FloatTensor] = None,
     ):
-        batch_size, seq_length, _ = hidden_states.shape
-        seq_length_with_past = seq_length
-        past_key_values_length = 0
-
         with torch.no_grad():
             inputs_embeds = self.embed_tokens(input_ids)
             if image_features is not None:
@@ -609,6 +638,36 @@ class Model(nn.Module):
                     )
                     image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
                     inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
+                    ############################pooling############################
+                    #new_inputs_embeds = []
+                    #new_hidden_states = []
+                    #
+                    #for i in range(input_ids.size(0)):
+                    #    start, end = self.find_sequence_boundaries(input_ids[i].to('cpu'))
+                    #    part1 = inputs_embeds[i, :int(start), :]
+                    #    part2 = inputs_embeds[i, int(start):int(end), :]
+                    #    part3 = inputs_embeds[i, int(end):, :]
+
+                    #    part2 = self.pool_tensor(part2)  # 풀링 적용
+                    #    new_inputs_embed = torch.cat([part1, part2, part3], dim=0)  # 다시 결합
+                    #    new_inputs_embeds.append(new_inputs_embed)
+                    #    
+                    #    part1 = hidden_states[i, :int(start), :]
+                    #    part2 = hidden_states[i, int(start):int(end), :]
+                    #    part3 = hidden_states[i, int(end):, :]
+
+                    #    part2 = self.pool_tensor(part2)
+                    #    new_hidden_state = torch.cat([part1, part2, part3], dim=0)  # 다시 결합
+                    #    new_hidden_states.append(new_hidden_state)
+                    #
+                    #inputs_embeds = torch.stack(new_inputs_embeds, dim=0)
+                    #hidden_states = torch.stack(new_hidden_states, dim=0)
+                    ############################pooling############################
+        batch_size, seq_length, _ = hidden_states.shape
+        seq_length_with_past = seq_length
+        past_key_values_length = 0
+
+        
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length

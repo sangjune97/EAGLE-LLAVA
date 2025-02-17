@@ -202,7 +202,6 @@ def ge(data):
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
     image_features = outs_big.image_hidden_states
     hidden_state_big = outs_big.hidden_states[-1]
-    import pdb;pdb.set_trace()
     td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu()[0],"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()[0]}
     return td
 
