@@ -196,7 +196,6 @@ class DataCollatorWithPadding:
         max_length = max(item['hidden_state_big'].shape[1] for item in features)
         batch_input_ids = torch.cat([self.paddingtensor2D(item['input_ids'], max_length) for item in features])
         batch_hidden_states = torch.cat([self.paddingtensor(item['hidden_state_big'], max_length) for item in features])
-        #batch_image_features = torch.cat([item['image_features'] for item in features])
         batch_target = torch.cat([self.paddingtensor(item['target'], max_length) for item in features])
         batch_loss_mask = torch.tensor(
             [item['loss_mask'] + [0] * (max_length - len(item['loss_mask'])) for item in features])
@@ -206,7 +205,6 @@ class DataCollatorWithPadding:
             "hidden_states": batch_hidden_states,
             "target": batch_target,
             "loss_mask": batch_loss_mask,
-            #"image_features": batch_image_features,
             
         }
         return batch
@@ -242,13 +240,11 @@ def getkacc(model, data, head, max_length=5):
     def generate(hidden_states, input_ids, head, max_length=4, use_cache=True):
         if use_cache:
             past_key_values = None
-            #image_features = None
             for i in range(max_length):
                 if past_key_values is not None:
                     out_hidden, past_key_values = model(last_hidden, input_ids=token, past_key_values=past_key_values,
                                                         use_cache=True)
                 else:
-                    #out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True, image_features=image_features)
                     out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True)
                 last_hidden = out_hidden[:, -1:]
                 last_headout = head(last_hidden)

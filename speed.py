@@ -52,6 +52,7 @@ avg_accept_length1 = calculate_avg_accept_length(jsonl_file1)
 avg_tok_per_sec1 = calculate_avg_tok_per_sec(jsonl_file1)
 avg_tok_per_sec2 = calculate_avg_tok_per_sec(jsonl_file2)
 
+print(jsonl_file1)
 # 결과 출력
 print(f"첫 번째 파일의 평균 total_time: {avg_time1:.6f} 초")
 print(f"두 번째 파일의 평균 total_time: {avg_time2:.6f} 초")

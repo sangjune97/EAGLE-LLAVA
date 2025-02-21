@@ -638,7 +638,7 @@ class Model(nn.Module):
                     )
                     image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
                     inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
-                    ############################pooling############################
+                    ###########################pooling############################
                     #new_inputs_embeds = []
                     #new_hidden_states = []
                     #
@@ -647,7 +647,6 @@ class Model(nn.Module):
                     #    part1 = inputs_embeds[i, :int(start), :]
                     #    part2 = inputs_embeds[i, int(start):int(end), :]
                     #    part3 = inputs_embeds[i, int(end):, :]
-
                     #    part2 = self.pool_tensor(part2)  # 풀링 적용
                     #    new_inputs_embed = torch.cat([part1, part2, part3], dim=0)  # 다시 결합
                     #    new_inputs_embeds.append(new_inputs_embed)
@@ -655,7 +654,6 @@ class Model(nn.Module):
                     #    part1 = hidden_states[i, :int(start), :]
                     #    part2 = hidden_states[i, int(start):int(end), :]
                     #    part3 = hidden_states[i, int(end):, :]
-
                     #    part2 = self.pool_tensor(part2)
                     #    new_hidden_state = torch.cat([part1, part2, part3], dim=0)  # 다시 결합
                     #    new_hidden_states.append(new_hidden_state)
