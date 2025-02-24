@@ -21,7 +21,7 @@ train_config = {
     "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
     "num_warmup_steps": 2000,
-    "total_steps": 1600000,
+    "total_steps": 800000,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
@@ -414,8 +414,6 @@ for epoch in tqdm(range(num_epochs + 1)):
                     acces = getkacc(model, data, head, max_length=5)
                     for i in range(len(acces)):
                         k_acc[i].append(acces[i])
-                #image_features = data["image_features"]
-                #predict = model(data["hidden_states"], input_ids=data["input_ids"], image_features=image_features)
                 predict = model(data["hidden_states"], input_ids=data["input_ids"])
                 target_head = head(data["target"])
                 target_p = nn.Softmax(dim=2)(target_head)

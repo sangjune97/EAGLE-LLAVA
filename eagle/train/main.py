@@ -239,17 +239,15 @@ def compute_loss(target, target_p, predict, loss_mask):
 
 @torch.no_grad()
 def getkacc(model, data, head, max_length=5):
-    def generate(hidden_states, input_ids, head, max_length=4, use_cache=True):
+    def generate(hidden_states, input_ids, image_features, head, max_length=4, use_cache=True):
         if use_cache:
             past_key_values = None
-            image_features = None
             for i in range(max_length):
                 if past_key_values is not None:
                     out_hidden, past_key_values = model(last_hidden, input_ids=token, past_key_values=past_key_values,
                                                         use_cache=True)
                 else:
                     out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True, image_features=image_features)
-                    #out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True)
                 last_hidden = out_hidden[:, -1:]
                 last_headout = head(last_hidden)
                 token = torch.argmax(last_headout, dim=-1)
@@ -259,6 +257,7 @@ def getkacc(model, data, head, max_length=5):
         return input_ids
 
     hidden_states = data["hidden_states"]
+    image_features = data["image_features"]
     input_ids = data["input_ids"]
     loss_mask = data["loss_mask"]
     target = data["target"]
@@ -273,7 +272,7 @@ def getkacc(model, data, head, max_length=5):
             continue
         pre_hidden_states = hidden_states[:, :pre_len]
         pre_input_ids = input_ids[:, :pre_len]
-        outs = generate(pre_hidden_states, pre_input_ids, head, max_length=max_length)
+        outs = generate(pre_hidden_states, pre_input_ids, image_features, head, max_length=max_length)
         generate_ids = outs[:, pre_len:]
         for bid in range(bs):
             for k in range(max_length):
@@ -350,7 +349,6 @@ for epoch in tqdm(range(num_epochs + 1)):
         with accelerator.accumulate(model):
             optimizer.zero_grad()
             predict = model(data["hidden_states"], input_ids=data["input_ids"], image_features=data["image_features"])
-            #predict = model(data["hidden_states"], input_ids=data["input_ids"])
             with torch.no_grad():
                 target_head = head(data["target"])
                 target_p = nn.Softmax(dim=2)(target_head)
@@ -418,9 +416,7 @@ for epoch in tqdm(range(num_epochs + 1)):
                     acces = getkacc(model, data, head, max_length=5)
                     for i in range(len(acces)):
                         k_acc[i].append(acces[i])
-                image_features = data["image_features"]
-                predict = model(data["hidden_states"], input_ids=data["input_ids"], image_features=image_features)
-                #predict = model(data["hidden_states"], input_ids=data["input_ids"])
+                predict = model(data["hidden_states"], input_ids=data["input_ids"], image_features=data["image_features"])
                 target_head = head(data["target"])
                 target_p = nn.Softmax(dim=2)(target_head)
                 target_p = target_p.detach()

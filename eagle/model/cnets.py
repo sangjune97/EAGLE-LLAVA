@@ -638,29 +638,6 @@ class Model(nn.Module):
                     )
                     image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
                     inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
-                    ###########################pooling############################
-                    #new_inputs_embeds = []
-                    #new_hidden_states = []
-                    #
-                    #for i in range(input_ids.size(0)):
-                    #    start, end = self.find_sequence_boundaries(input_ids[i].to('cpu'))
-                    #    part1 = inputs_embeds[i, :int(start), :]
-                    #    part2 = inputs_embeds[i, int(start):int(end), :]
-                    #    part3 = inputs_embeds[i, int(end):, :]
-                    #    part2 = self.pool_tensor(part2)  # 풀링 적용
-                    #    new_inputs_embed = torch.cat([part1, part2, part3], dim=0)  # 다시 결합
-                    #    new_inputs_embeds.append(new_inputs_embed)
-                    #    
-                    #    part1 = hidden_states[i, :int(start), :]
-                    #    part2 = hidden_states[i, int(start):int(end), :]
-                    #    part3 = hidden_states[i, int(end):, :]
-                    #    part2 = self.pool_tensor(part2)
-                    #    new_hidden_state = torch.cat([part1, part2, part3], dim=0)  # 다시 결합
-                    #    new_hidden_states.append(new_hidden_state)
-                    #
-                    #inputs_embeds = torch.stack(new_inputs_embeds, dim=0)
-                    #hidden_states = torch.stack(new_hidden_states, dim=0)
-                    ############################pooling############################
         batch_size, seq_length, _ = hidden_states.shape
         seq_length_with_past = seq_length
         past_key_values_length = 0
