@@ -276,8 +276,8 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
     filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
     # Clone the output hidden states
     
-    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(filtered_hidden_states, filtered_input_ids, model.base_model.language_model.lm_head,logits_processor,image_features)
-    return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, orig, hidden_states, token
+    draft_tokens, retrieve_indices,tree_mask,tree_position_ids, attentions = model.ea_layer.topK_genrate(filtered_hidden_states, filtered_input_ids, model.base_model.language_model.lm_head,logits_processor,image_features)
+    return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, orig, hidden_states, token, attentions
 
 
 def reset_tree_mode(
@@ -493,13 +493,13 @@ def update_inference_inputs(
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)
     
-    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(accept_hidden_state_new,
+    draft_tokens, retrieve_indices,tree_mask,tree_position_ids, attentions = model.ea_layer.topK_genrate(accept_hidden_state_new,
                                               input_ids=filtered_input_ids, head=model.base_model.language_model.lm_head,logits_processor=logits_processor)
 
-
+    
     new_token += accept_length + 1
 
-    return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token
+    return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token, attentions
 
 
 if __name__ == "__main__":

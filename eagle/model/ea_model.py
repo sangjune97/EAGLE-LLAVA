@@ -227,6 +227,7 @@ class EaModel(nn.Module):
             
 
     ):
+        attentions = []
         tokenizer = AutoTokenizer.from_pretrained('lmsys/vicuna-7b-v1.3')
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
@@ -262,9 +263,10 @@ class EaModel(nn.Module):
             self.current_length_data = current_length_data
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
-        draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
+        draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token, new_attentions = initialize_tree(
             input_ids, self, pixel_values, past_key_values, logits_processor
         )
+        attentions.extend(new_attentions)
         new_token = 0
         
         # accept_length 누적 리스트
@@ -294,6 +296,8 @@ class EaModel(nn.Module):
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
+            #tok = tokenizer.convert_ids_to_tokens(candidates[best_candidate][0:1+accept_length])
+            #print(tok)
             
             
             # accept_length 값을 리스트에 추가
@@ -301,7 +305,7 @@ class EaModel(nn.Module):
             
             #print(accept_length)
             #with Timer("update_inference_inputs"):
-            input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token = update_inference_inputs(
+            input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token, new_attentions = update_inference_inputs(
                 input_ids,
                 candidates,
                 best_candidate,
@@ -315,6 +319,7 @@ class EaModel(nn.Module):
                 hidden_state_new,
                 sample_p
             )
+            #attentions.extend(new_attentions)
 
             if is_llama3:
                 if stop_token_id in input_ids[0, input_len:].tolist():
@@ -326,14 +331,14 @@ class EaModel(nn.Module):
                 break
             if input_ids.shape[1] > max_length:
                 break
-            
+        
         # 평균 accept_length 계산
         avg_accept_length = sum(accept_lengths) / len(accept_lengths) if accept_lengths else 0.0
         
         if not log:
             return input_ids
         else:
-            return input_ids, new_token, idx, avg_accept_length
+            return input_ids, new_token, idx, avg_accept_length, attentions
 
 
     @torch.no_grad()

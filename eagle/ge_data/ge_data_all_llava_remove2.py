@@ -6,7 +6,7 @@ parser.add_argument('--start', type=int, default=0)
 parser.add_argument('--end', type=int, default=100)
 parser.add_argument('--index', type=int, default=1)
 parser.add_argument('--gpu_index', type=int, nargs='+', default=[0])
-parser.add_argument('--outdir', type=str, default='outdir0')
+parser.add_argument('--outdir', type=str, default='outdir1')
 args = parser.parse_args()
 import os
 
@@ -62,44 +62,6 @@ def build_dataset_rank(
     ds1 = ds.select(range(args.start, args.end))
     original_columns1 = ds1.column_names
     num_proc = 4
-    
-    def colorize_text(input_ids, loss_mask, tokenizer):
-        # input_ids를 텍스트로 변환
-        tokens = tokenizer.convert_ids_to_tokens(input_ids)
-
-        # 텍스트와 loss_mask를 이용하여 색상 적용
-        colored_text = ""
-        for token, mask in zip(tokens, loss_mask):
-            if mask == 1:
-                # loss_mask가 1인 토큰은 초록색
-                colored_text += "\033[92m" + token + "\033[0m" + " "
-            else:
-                # loss_mask가 0인 토큰은 빨간색
-                colored_text += "\033[91m" + token + "\033[0m" + " "
-
-        print(colored_text)
-    
-    def contains_special_token(turn, tokenizer, special_token_id=32000):
-        input_ids = tokenizer(turn).input_ids
-
-        return special_token_id in input_ids
-    
-    def remove_elements(tensor, value, num_elements):
-        # 값이 처음 발견되는 인덱스를 찾습니다.
-        index = (tensor == value).nonzero(as_tuple=True)[0]
-        if index.nelement() == 0:
-            # 값이 텐서에 없다면 원본 텐서를 반환합니다.
-            return tensor
-        # 값이 있는 인덱스를 기준으로 432개의 엘리먼트를 삭제합니다.
-        start_index = index[0].item()
-        end_index = start_index + num_elements
-        if end_index > tensor.nelement():
-            # 만약 end_index가 텐서의 크기를 초과한다면 start_index부터 끝까지 삭제합니다.
-            return torch.cat((tensor[:start_index], torch.tensor([])), dim=0)
-        else:
-            # 그렇지 않다면 start_index부터 end_index 이전까지 삭제합니다.
-            return torch.cat((tensor[:start_index], tensor[end_index:]), dim=0)
-
     def preprocess_function(examples):
         new_examples = {
             "conversation":[],
@@ -109,7 +71,7 @@ def build_dataset_rank(
             "loss_mask": []
         }
         for i in range(len(examples['id'])):
-            conv = get_conversation_template("vicuna_v1")
+            conv = get_conversation_template("vicuna")
             roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
             source= examples['conversations'][i]
 
@@ -122,6 +84,12 @@ def build_dataset_rank(
                 assert role == conv.roles[j % 2], f"{i}"
                 conv.append_message(role, sentence["value"])
             conversation=conv.get_prompt()
+            #input_ids = tokenizer(
+            #    conversation,
+            #    return_tensors="pt",
+            #    max_length=tokenizer.model_max_length,
+            #    truncation=True,
+            #).input_ids[0]
             
             image_file = examples['image'][i]
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
@@ -142,9 +110,7 @@ def build_dataset_rank(
             for i, turn in enumerate(turns):
                 if turn == "":
                     break
-                is_im_token = contains_special_token(turn,tokenizer)
                 turn_len = len(tokenizer(turn).input_ids)
-                if is_im_token : turn_len+=576
 
                 parts = turn.split(sep)
                 if len(parts) != 2:
@@ -152,21 +118,26 @@ def build_dataset_rank(
                 parts[0] += sep
                 # "-2" is hardcoded for the Llama tokenizer to make the offset correct.
                 instruction_len = len(tokenizer(parts[0]).input_ids) - 2
-                if is_im_token : instruction_len+=576
-                
-                if i==0:
+
+                if i != 0 and not tokenizer.legacy:
+                    # The legacy and non-legacy modes handle special tokens differently
                     instruction_len -= 1
 
                 # image token length
-                
+                image_token_len = torch.sum(input_ids == 32000).item()
                 
                 # Ignore the user instructions
-                loss_mask[cur_len: cur_len + instruction_len] = 0
-                cur_len += turn_len
-                if i==0:
+                loss_mask[cur_len: cur_len + instruction_len + image_token_len] = 0
+                cur_len += turn_len + image_token_len
+
+                if i != 0 and not tokenizer.legacy:
+                    # The legacy and non-legacy modes handle special tokens differently
                     cur_len -= 1
+
             loss_mask[cur_len:] = 0
-            
+
+
+
             new_examples["conversation"].append(conversation)
             new_examples["input_ids"].append(input_ids[None,:])
             new_examples["image"].append(image_file)
@@ -190,7 +161,7 @@ def build_dataset_rank(
     # dst.set_format(type="torch")
     return ds1
 
-bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
+bigtokenizer = AutoTokenizer.from_pretrained(bigname,use_fast=False)
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
@@ -203,21 +174,6 @@ bigmodel.eval()
 
 
 
-
-def pool_tensor(input_tensor):
-    # 입력 텐서의 형태를 [1, 24, 24, 4096]으로 변경
-    reshaped_tensor = input_tensor.reshape(1, 24, 24, 4096)
-
-    # 차원을 (배치 크기, 채널, 높이, 너비)로 변환
-    corrected_tensor = reshaped_tensor.permute(0, 3, 1, 2)  # 이제 (1, 4096, 24, 24) 형태
-
-    # 최대 풀링 적용
-    pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
-
-    # pooled_tensor를 [1, 144, 4096]으로 다시 변환
-    reshaped_back_tensor = pooled_tensor.reshape(1, 144, 4096)
-
-    return reshaped_back_tensor
 
 def colorize_text(input_ids, loss_mask, tokenizer):
         # input_ids를 텍스트로 변환
@@ -242,6 +198,9 @@ def ge(data):
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
     hidden_state_big = outs_big.hidden_states[-1]
     filtered_input_ids, filtered_loss_mask, filtered_hidden_states = remove_image_token(input_ids, 32000, loss_mask, hidden_state_big)
+    tokenizer = AutoTokenizer.from_pretrained(bigname,use_fast=False)
+    colorize_text(filtered_input_ids[0], filtered_loss_mask[0], tokenizer)
+    input()
     td={"input_ids":filtered_input_ids.cpu()[0],"image":data["image"],"hidden_state":filtered_hidden_states.cpu()[0],"loss_mask":filtered_loss_mask.cpu()[0]}
     return td
 
@@ -260,5 +219,3 @@ def writedata(name,data_point):
 for data in tqdm(ds):
     outdata = ge(data)
     writedata(outdir,outdata)
-
-

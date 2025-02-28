@@ -619,11 +619,6 @@ class Model(nn.Module):
             std=None,
             image_features: Optional[torch.FloatTensor] = None,
     ):
-        
-        batch_size, seq_length, _ = hidden_states.shape
-        seq_length_with_past = seq_length
-        past_key_values_length = 0
-
         with torch.no_grad():
             inputs_embeds = self.embed_tokens(input_ids)
             if image_features is not None:
@@ -643,6 +638,11 @@ class Model(nn.Module):
                     )
                     image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
                     inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
+        batch_size, seq_length, _ = hidden_states.shape
+        seq_length_with_past = seq_length
+        past_key_values_length = 0
+
+        
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
@@ -674,7 +674,6 @@ class Model(nn.Module):
 
         all_hidden_states = () if output_hidden_states else None
         next_decoder_cache = () if use_cache else None
-        attentions = () if output_attentions else None
 
         for idx, decoder_layer in enumerate(self.layers):
             if output_hidden_states:
@@ -711,20 +710,11 @@ class Model(nn.Module):
 
             if use_cache:
                 next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
-            
-            if output_attentions:
-                attentions += (layer_outputs[1], )
-        
-        if output_attentions:
-            if use_cache:
-                return hidden_states, attentions, next_decoder_cache
-            else:
-                return hidden_states, attentions
-        else:
-            if use_cache:
-                return hidden_states, next_decoder_cache
-            else:
-                return hidden_states
+
+        if use_cache:
+            return hidden_states, next_decoder_cache
+
+        return hidden_states
 
     def reset_kv(self):
         self.stable_kv = None
@@ -734,7 +724,6 @@ class Model(nn.Module):
         
         input_ids = input_ids.to(hidden_states.device)
         image_features = image_features
-        attentions = []
         total_tokens = self.total_tokens
         depth = self.depth
         top_k = self.top_k
@@ -753,12 +742,10 @@ class Model(nn.Module):
         # with Timer("draft many"):
         if hasattr(self, "stable_kv") and self.stable_kv is not None:
             kv_len = self.stable_kv[0][0].shape[2]
-            out_hidden, tmp_attentions, past_key_values = self(hidden_states, input_ids=input_ids[:, kv_len:],
-                                               past_key_values=self.stable_kv, use_cache=True, output_attentions=True)
+            out_hidden, past_key_values = self(hidden_states, input_ids=input_ids[:, kv_len:],
+                                               past_key_values=self.stable_kv, use_cache=True)
         else:
-            out_hidden, tmp_attentions, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True,image_features=image_features, output_attentions=True)
-        tmp_attentions = torch.stack([tensor for tensor in tmp_attentions]).squeeze(1)
-        attentions.append(tmp_attentions.mean(dim=1))
+            out_hidden, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True,image_features=image_features)
         self.stable_kv = past_key_values
         last_hidden = out_hidden[:, -1]
         if not self.diff_device:
@@ -787,13 +774,10 @@ class Model(nn.Module):
             self.tree_mask = tree_mask
             position_ids = len_posi + self.position_ids
             # with Timer("draft one"):
-            out_hidden, tmp_attentions, past_key_values = self(input_hidden, input_ids=input_ids, past_key_values=past_key_values,
-                                               position_ids=position_ids, use_cache=True, output_attentions=True)
+            out_hidden, past_key_values = self(input_hidden, input_ids=input_ids, past_key_values=past_key_values,
+                                               position_ids=position_ids, use_cache=True)
             len_posi += 1
-            
-            tmp_attentions = torch.stack([tensor for tensor in tmp_attentions]).squeeze(1)
-            attentions.append(tmp_attentions.mean(dim=1))
-            
+
             # with Timer("sort1"):
             bias1 = top_k if i > 0 else 0
             bias2 = max(0, i - 1)
@@ -922,7 +906,7 @@ class Model(nn.Module):
         del mask_index, mask_index_list, noleaf_index, noleaf_num, leaf_num, max_depth, rid
         tree_position_ids = tree_position_ids.to(hidden_states.device)
 
-        return draft_tokens, retrieve_indices, tree_mask, tree_position_ids, attentions
+        return draft_tokens, retrieve_indices, tree_mask, tree_position_ids
 
     @torch.no_grad()
     def acc(self, data, head, max_length=5):

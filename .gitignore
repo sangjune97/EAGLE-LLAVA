@@ -163,3 +163,10 @@ playground/
 *.ckpt
 wandb/
 ckpt/
+
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+*.png
+*.PNG

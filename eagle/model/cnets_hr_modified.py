@@ -40,7 +40,7 @@ except:
     from choices import *
     from utils import prepare_logits_processor
 
-
+from .utils import Timer
 
 
 # Copied from transformers.models.bart.modeling_bart._make_causal_mask
@@ -483,11 +483,11 @@ class Model(nn.Module):
             try:
                 with open(os.path.join(path, "model.safetensors.index.json"), "r") as f:
                     index_json = json.loads(f.read())
-                    emb_path = index_json["weight_map"]["language_model.model.embed_tokens.weight"]
+                    emb_path = index_json["weight_map"]["model.embed_tokens.weight"]
                 with safe_open(os.path.join(path, emb_path),
                                framework="pt",
                                device="cpu") as f:
-                    tensor_slice = f.get_slice("language_model.model.embed_tokens.weight")
+                    tensor_slice = f.get_slice("model.embed_tokens.weight")
                     vocab_size, hidden_dim = tensor_slice.get_shape()
                     tensor = tensor_slice[:, :hidden_dim].float()
             except:
@@ -506,31 +506,14 @@ class Model(nn.Module):
         # print("depth",depth)
         # print("top_k",top_k)
         # print("threshold",threshold)
+
         self.layers = nn.ModuleList([LlamaDecoderLayer(config, index) for index in range(config.num_hidden_layers)])
         self.fc = nn.Linear(2 * config.hidden_size, config.hidden_size, bias=bias)
         self.act = ACT2FN[config.hidden_act]
         self.logsoftmax = nn.LogSoftmax(dim=-1)
         for param in self.embed_tokens.parameters():
             param.requires_grad = False
-            
-    @classmethod
-    def from_pretrained(cls, config, path):
-        from huggingface_hub import hf_hub_download
-        model = cls(config)
-        try:
-            load_model_path=os.path.join(path, "pytorch_model.bin")
-            if not os.path.exists(load_model_path):
-                load_model_path=hf_hub_download(path, "pytorch_model.bin")
-            ea_layer_state_dict = torch.load(load_model_path)
-        except:
-            from safetensors.torch import load_file
-            load_model_path = os.path.join(path, "model.safetensors")
-            if not os.path.exists(load_model_path):
-                load_model_path = hf_hub_download(path, "model.safetensors")
-            ea_layer_state_dict = load_file(load_model_path)
-        model.load_state_dict(ea_layer_state_dict,strict=False)
-        return model
-    
+
     def init_tree(self):
         self.tree_mask_init = torch.eye(self.top_k, device=self.embed_tokens.weight.device)[None, None]
         self.position_ids = torch.zeros(self.top_k, device=self.embed_tokens.weight.device, dtype=torch.long)
@@ -570,39 +553,6 @@ class Model(nn.Module):
                 ] = torch.finfo(torch.float32).min
 
         return combined_attention_mask
-    
-    def pool_tensor(self, input_tensor):
-        # 입력 텐서의 형태를 [1, 24, 24, 4096]으로 변경
-        reshaped_tensor = input_tensor.reshape(24, 24, 4096)
-
-        # 차원을 (배치 크기, 채널, 높이, 너비)로 변환
-        corrected_tensor = reshaped_tensor.permute(2, 0 ,1)  # 이제 (1, 4096, 24, 24) 형태
-
-        # 최대 풀링 적용
-        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
-
-        # pooled_tensor를 [1, 144, 4096]으로 다시 변환
-        reshaped_back_tensor = pooled_tensor.reshape(144, 4096)
-
-        return reshaped_back_tensor
-    
-    def find_sequence_boundaries(self, tensor, value=32000):
-        # 텐서를 1D로 변환 (필요시)
-        tensor = tensor.flatten()
-
-        # 지정 값이 시작하고 끝나는 지점 찾기
-        is_value = tensor == value
-        shifted_right = torch.cat((torch.tensor([False]), is_value[:-1]))
-        shifted_left = torch.cat((is_value[1:], torch.tensor([False])))
-
-        # 시작점: 현재는 True이고, 이전은 False인 위치
-        start_indices = (is_value & ~shifted_right).nonzero(as_tuple=True)[0]
-        # 종료점: 현재는 True이고, 다음은 False인 위치
-        end_indices = (is_value & ~shifted_left).nonzero(as_tuple=True)[0] + 1
-        
-
-        return start_indices, end_indices
-
 
     def forward(
             self,
@@ -617,32 +567,19 @@ class Model(nn.Module):
             output_hidden_states: Optional[bool] = None,
             return_dict: Optional[bool] = None,
             std=None,
-            image_features: Optional[torch.FloatTensor] = None,
     ):
-        
         batch_size, seq_length, _ = hidden_states.shape
         seq_length_with_past = seq_length
         past_key_values_length = 0
 
         with torch.no_grad():
             inputs_embeds = self.embed_tokens(input_ids)
-            if image_features is not None:
-                n_image_tokens = (input_ids == 32000).sum(dim=-1)[0].item()
-                n_image_features = image_features.shape[1]
-                if n_image_tokens != n_image_features:
-                    image_features = None
-                    #raise ValueError(
-                    #    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                    #)
-                else :
-                    special_image_mask = (
-                        (input_ids == 32000)
-                        .unsqueeze(-1)
-                        .expand_as(inputs_embeds)
-                        .to(inputs_embeds.device)
-                    )
-                    image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
-                    inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
+            # inputs_embeds = inputs_embeds.detach()
+
+        # if std is not None:
+        #     noise = torch.randn(inputs_embeds.size(),device=inputs_embeds.device) * std
+        #     inputs_embeds=inputs_embeds+noise
+
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
@@ -730,11 +667,9 @@ class Model(nn.Module):
         self.stable_kv = None
 
     @torch.no_grad()
-    def topK_genrate(self, hidden_states, input_ids, head, logits_processor, image_features=None):
-        
+    def topK_genrate(self, hidden_states, input_ids, head, logits_processor):
+
         input_ids = input_ids.to(hidden_states.device)
-        image_features = image_features
-        attentions = []
         total_tokens = self.total_tokens
         depth = self.depth
         top_k = self.top_k
@@ -747,28 +682,24 @@ class Model(nn.Module):
 
         input_ids = input_ids[:, 1:]
         input_ids = input_ids.to(hidden_states.device)
+
         len_posi = input_ids.shape[1]
         self.reset()
+
+        with Timer("Prefill_SSM", printing=False):
+            if hasattr(self, "stable_kv") and self.stable_kv is not None:
+                kv_len = self.stable_kv[0][0].shape[2]
+                out_hidden, tmp_attentions, past_key_values = self(hidden_states, input_ids=input_ids[:, kv_len:],
+                                                past_key_values=self.stable_kv, use_cache=True, output_attentions=True)
+            else:
+                out_hidden, tmp_attentions, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True, output_attentions=True)
         
-        # with Timer("draft many"):
-        if hasattr(self, "stable_kv") and self.stable_kv is not None:
-            kv_len = self.stable_kv[0][0].shape[2]
-            out_hidden, tmp_attentions, past_key_values = self(hidden_states, input_ids=input_ids[:, kv_len:],
-                                               past_key_values=self.stable_kv, use_cache=True, output_attentions=True)
-        else:
-            out_hidden, tmp_attentions, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True,image_features=image_features, output_attentions=True)
-        tmp_attentions = torch.stack([tensor for tensor in tmp_attentions]).squeeze(1)
-        attentions.append(tmp_attentions.mean(dim=1))
+        attentions = torch.stack([tensor for tensor in tmp_attentions]).squeeze(1)
+        
         self.stable_kv = past_key_values
         last_hidden = out_hidden[:, -1]
-        if not self.diff_device:
-                last_headout = head(last_hidden)
-        else:
-            if hasattr(self, "layer_device"):
-                last_headout = head(last_hidden)
-                last_headout = last_headout.to(self.layer_device)
-            else:
-                last_headout = F.linear(last_hidden, self.headweight)
+
+        last_headout = head(last_hidden)
 
         last_p = self.logsoftmax(last_headout)
         top = torch.topk(last_p, top_k, dim=-1)
@@ -788,11 +719,11 @@ class Model(nn.Module):
             position_ids = len_posi + self.position_ids
             # with Timer("draft one"):
             out_hidden, tmp_attentions, past_key_values = self(input_hidden, input_ids=input_ids, past_key_values=past_key_values,
-                                               position_ids=position_ids, use_cache=True, output_attentions=True)
+                                                position_ids=position_ids, use_cache=True, output_attentions=True)
             len_posi += 1
-            
+
             tmp_attentions = torch.stack([tensor for tensor in tmp_attentions]).squeeze(1)
-            attentions.append(tmp_attentions.mean(dim=1))
+            attentions = torch.cat((F.pad(attentions, (0, tmp_attentions.size(-1)-attentions.size(-1))), tmp_attentions), dim=-2)
             
             # with Timer("sort1"):
             bias1 = top_k if i > 0 else 0
@@ -800,16 +731,8 @@ class Model(nn.Module):
             bias = 1 + top_k ** 2 * bias2 + bias1
             parents = (topk_cs_index + bias)
             parents_list.append(parents)
-            
-            if not self.diff_device:
-                last_headout = head(out_hidden[0])
-            else:
-                if hasattr(self, "layer_device"):
-                    last_headout = head(out_hidden[0])
-                    last_headout = last_headout.to(self.layer_device)
-                else:
-                    last_headout = F.linear(out_hidden[0], self.headweight)
-            
+
+            last_headout = head(out_hidden[0])
             last_p = self.logsoftmax(last_headout)
 
             top = torch.topk(last_p, top_k, dim=-1)
@@ -922,7 +845,10 @@ class Model(nn.Module):
         del mask_index, mask_index_list, noleaf_index, noleaf_num, leaf_num, max_depth, rid
         tree_position_ids = tree_position_ids.to(hidden_states.device)
 
-        return draft_tokens, retrieve_indices, tree_mask, tree_position_ids, attentions
+        selected_tokens = attentions[:,:,-50:,:-49].mean(dim=(-2,-3,-4)).topk(1024).indices.sort().values
+        # selected_tokens = torch.arange(0, attentions.size(-1)-50, device=attentions.device)
+        
+        return draft_tokens, retrieve_indices, tree_mask, tree_position_ids, selected_tokens
 
     @torch.no_grad()
     def acc(self, data, head, max_length=5):

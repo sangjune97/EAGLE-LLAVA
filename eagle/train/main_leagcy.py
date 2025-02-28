@@ -21,7 +21,7 @@ train_config = {
     "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
     "num_warmup_steps": 2000,
-    "total_steps": 1600000,
+    "total_steps": 800000,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
@@ -142,7 +142,7 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, index):
         # try:
-        data = torch.load(self.data[index])
+        data = torch.load(self.data[index],weights_only=True)
         new_data = {}
         hidden_state = data['hidden_state'][:train_config["max_len"]][None, :]
         input_ids = data['input_ids'][:train_config["max_len"]][None, :]
@@ -152,7 +152,6 @@ class CustomDataset(Dataset):
 
         length = hidden_state.shape[1]
         # length_q = data['query_ids'].shape[1]
-        attention_mask = [1] * length
         loss_mask = loss_mask[0].tolist()
         loss_mask[-1] = 0
 
@@ -164,7 +163,6 @@ class CustomDataset(Dataset):
         zeropadding = torch.zeros(1, 1, target.shape[2])
         target = torch.cat((target, zeropadding), dim=1)
         loss_mask[-1] = 0
-        new_data["attention_mask"] = attention_mask
         new_data["loss_mask"] = loss_mask
         new_data["target"] = target
         new_data["hidden_state_big"] = hidden_state
@@ -198,17 +196,18 @@ class DataCollatorWithPadding:
         max_length = max(item['hidden_state_big'].shape[1] for item in features)
         batch_input_ids = torch.cat([self.paddingtensor2D(item['input_ids'], max_length) for item in features])
         batch_hidden_states = torch.cat([self.paddingtensor(item['hidden_state_big'], max_length) for item in features])
+        #batch_image_features = torch.cat([item['image_features'] for item in features])
         batch_target = torch.cat([self.paddingtensor(item['target'], max_length) for item in features])
         batch_loss_mask = torch.tensor(
             [item['loss_mask'] + [0] * (max_length - len(item['loss_mask'])) for item in features])
-        batch_attention_mask = torch.tensor(
-            [item['attention_mask'] + [0] * (max_length - len(item['attention_mask'])) for item in features])
+
         batch = {
             "input_ids": batch_input_ids,
             "hidden_states": batch_hidden_states,
             "target": batch_target,
-            "attention_mask": batch_attention_mask,
             "loss_mask": batch_loss_mask,
+            
+            #"image_features": batch_image_features,
             
         }
         return batch
@@ -244,12 +243,14 @@ def getkacc(model, data, head, max_length=5):
     def generate(hidden_states, input_ids, head, max_length=4, use_cache=True):
         if use_cache:
             past_key_values = None
+            image_features = None
             for i in range(max_length):
                 if past_key_values is not None:
-                    out_hidden, past_key_values = model(last_hidden, input_ids=token, past_key_values=past_key_values, image_features = None,
+                    out_hidden, past_key_values = model(last_hidden, input_ids=token, past_key_values=past_key_values,
                                                         use_cache=True)
                 else:
-                    out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, image_features = None, use_cache=True)
+                    out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True, image_features=image_features)
+                    #out_hidden, past_key_values = model(hidden_states, input_ids=input_ids, use_cache=True)
                 last_hidden = out_hidden[:, -1:]
                 last_headout = head(last_hidden)
                 token = torch.argmax(last_headout, dim=-1)
@@ -350,7 +351,7 @@ for epoch in tqdm(range(num_epochs + 1)):
         with accelerator.accumulate(model):
             optimizer.zero_grad()
             #predict = model(data["hidden_states"], input_ids=data["input_ids"], image_features=data["image_features"])
-            predict = model(data["hidden_states"], input_ids=data["input_ids"], attention_mask=data["attention_mask"])
+            predict = model(data["hidden_states"], input_ids=data["input_ids"])
             with torch.no_grad():
                 target_head = head(data["target"])
                 target_p = nn.Softmax(dim=2)(target_head)
@@ -418,7 +419,9 @@ for epoch in tqdm(range(num_epochs + 1)):
                     acces = getkacc(model, data, head, max_length=5)
                     for i in range(len(acces)):
                         k_acc[i].append(acces[i])
-                predict = model(data["hidden_states"], input_ids=data["input_ids"], attention_mask=data["attention_mask"])
+                #image_features = data["image_features"]
+                #predict = model(data["hidden_states"], input_ids=data["input_ids"], image_features=image_features)
+                predict = model(data["hidden_states"], input_ids=data["input_ids"])
                 target_head = head(data["target"])
                 target_p = nn.Softmax(dim=2)(target_head)
                 target_p = target_p.detach()
