@@ -229,6 +229,44 @@ def initialize_tree0(input_ids, model, past_key_values, logits_processor):
     #     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, hidden_states, token
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token
 
+def remove_image_token_except_last(input_ids, img_tok_index, hidden_states=None):
+    # input_ids, loss_mask는 (1, seq_len) 형태라고 가정
+    # hidden_states는 (1, seq_len, hidden_dim) 형태라고 가정
+    
+    # 먼저 (1, seq_len) -> (seq_len,) 으로 차원을 줄임
+    flat_input_ids = input_ids.squeeze(0)   # (seq_len,)
+
+    # 32000(img_tok_index)인 위치 전부 찾기
+    positions = (flat_input_ids == img_tok_index).nonzero(as_tuple=True)[0]
+    
+    # 만약 32000이 여러 개라면, 마지막 위치만 남기고 다 제거할 마스크를 만든다
+    if len(positions) > 1:
+        last_pos = positions[-1]
+        
+        # 일단 전부 True로 초기화
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+        # 32000이었던 위치 전부 False로 설정
+        keep_mask[positions] = False
+        # 마지막 하나만 True로 되돌림
+        keep_mask[last_pos] = True
+    else:
+        # 32000이 없거나 한 개만 있을 경우엔 전부 유지
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+
+    # 마스크대로 input_ids, loss_mask 추려서 (1, -1)로 형태 맞춤
+    filtered_input_ids = flat_input_ids[keep_mask].unsqueeze(0)
+
+    if hidden_states is not None:
+        # hidden_states: (1, seq_len, hidden_dim) -> (seq_len, hidden_dim)
+        flat_hidden_states = hidden_states.squeeze(0)
+        
+        # keep_mask를 적용해 (남길 위치만 남기기)
+        filtered_hidden_states = flat_hidden_states[keep_mask, :].unsqueeze(0)
+        
+        return filtered_input_ids, filtered_hidden_states
+    
+    return filtered_input_ids
+
 def remove_image_token(input_ids, img_tok_index, hidden_states=None):
     mask = input_ids != img_tok_index
     filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
@@ -253,7 +291,16 @@ def nothing_image_token(input_ids, img_tok_index, hidden_states=None):
     
     return input_ids
 
-def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_processor):
+def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_processor, token_process):
+    if token_process == 1:
+        process_token = remove_image_token
+    elif token_process == 2:
+        process_token = pool_image_token
+    elif token_process == 3:
+        process_token = remove_image_token_except_last
+    else :
+        process_token = nothing_image_token
+        
     outputs, orig, hidden_states = model(
         input_ids, pixel_values, past_key_values=past_key_values, output_orig=True
     )
@@ -270,7 +317,7 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
         token = torch.argmax(orig[:, -1])
         token = token[None, None]
     ea_layer_device = model.ea_layer.fc.weight.device
-    filtered_input_ids, filtered_hidden_states = remove_image_token(input_ids, model.base_model.config.image_token_index, hidden_states)
+    filtered_input_ids, filtered_hidden_states = process_token(input_ids, model.base_model.config.image_token_index, hidden_states)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
@@ -449,8 +496,18 @@ def update_inference_inputs(
         current_length_data,
         model,
         hidden_state_new,
-        sample_p
+        sample_p,
+        token_process
 ):
+    if token_process == 0:
+        process_token = nothing_image_token
+    elif token_process == 1:
+        process_token = remove_image_token
+    elif token_process == 2:
+        process_token = pool_image_token
+    elif token_process == 3:
+        process_token = remove_image_token_except_last
+        
     prev_input_len = input_ids.shape[1]
     # Map the best candidate indices to the original indices in the sequence
     select_indices = (
@@ -488,7 +545,7 @@ def update_inference_inputs(
     ea_layer_device = model.ea_layer.fc.weight.device
 
     input_ids = input_ids.to(ea_layer_device)
-    filtered_input_ids = remove_image_token(input_ids, model.base_model.config.image_token_index)
+    filtered_input_ids = process_token(input_ids, model.base_model.config.image_token_index)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)

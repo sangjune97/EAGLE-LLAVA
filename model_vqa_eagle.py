@@ -78,7 +78,8 @@ def eval_model(args):
                 temperature=args.temperature,
                 top_p=args.top_p,
                 max_new_tokens=1024,
-                log=True)
+                log=True,
+                token_process=args.token_process)
             
         # **시간 측정 종료**
         torch.cuda.synchronize()
@@ -117,6 +118,7 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
+    parser.add_argument("--token-process", type=int, default=0)
     args = parser.parse_args()
 
     eval_model(args)
