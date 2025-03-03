@@ -299,7 +299,6 @@ class EaModel(nn.Module):
             print(candidates[best_candidate])
             tok = tokenizer.convert_ids_to_tokens(candidates[best_candidate][1:1+accept_length])
             print(tok)
-            import pdb;pdb.set_trace()
             
             
             # accept_length 값을 리스트에 추가

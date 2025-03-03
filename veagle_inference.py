@@ -12,7 +12,7 @@ processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
 model = EaModel.from_pretrained(
     base_model_path="llava-hf/llava-1.5-7b-hf",
-    ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt/finetune_wo_img_5e-5/state_40",
+    ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt/w_last_img_5e-5/state_40",
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True,
     device_map="auto",
@@ -154,12 +154,101 @@ print(avg_accept_length)
 # plt.show()
 # plt.savefig('attention_map.png', dpi=300, bbox_inches='tight')
 
+# ########################Without Image###############################
+# def remove_image_token(input_ids, img_tok_index, hidden_states=None):
+#     mask = input_ids != img_tok_index
+#     filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
+#     if hidden_states is not None:
+#         filtered_hidden_states = hidden_states[:, mask[0], :]
+#         return filtered_input_ids, filtered_hidden_states
+    
+#     return filtered_input_ids
+
+# fontsize = 8
+# import matplotlib.pyplot as plt
+# from matplotlib.colors import LogNorm
+# # (1) 예시 어텐션 맵 & input_ids 준비
+# attention_map = attentions[0]   # torch.Size([1, 604, 604])
+# print(torch.as_tensor(inputs["input_ids"]).shape)
+# input_ids = remove_image_token(torch.as_tensor(inputs["input_ids"]),32000)  # torch.Size([1, 604]) 예시
+# print(input_ids.shape)
+# # (2) 배치 차원 제거
+# attention_map = attention_map.squeeze(0)  # -> (604, 604)
+# import torch.nn.functional as F
+# #import pdb;pdb.set_trace()
+# input_ids = input_ids.squeeze(0)          # -> (604,)
+
+# # (3) input_ids -> 토큰 문자열로 변환
+# tokenzier = processor.tokenizer
+
+# tokens = tokenzier.convert_ids_to_tokens(input_ids)
+
+# # (4) 어텐션 맵 시각화
+# plt.figure(figsize=(6,6))
+
+# vmin = 1e-3
+# vmax = 1
+# attention_map[attention_map <= 0] = vmin
+# plt.imshow(attention_map.cpu().float(), cmap='viridis', norm = LogNorm(vmin=vmin,vmax=vmax),aspect='auto')
+
+# # (5) 축 라벨 지정
+# plt.xticks(range(len(tokens)), tokens, rotation=90, fontsize=fontsize)
+# plt.yticks(range(len(tokens)), tokens, fontsize=fontsize)
+
+# # 틱 선 제거
+# plt.tick_params(axis='x', which='both', length=0)
+# plt.tick_params(axis='y', which='both', length=0)
+
+# plt.colorbar()
+# plt.title('Attention Score Map')
+# plt.tight_layout()  # 라벨 겹침 방지
+# plt.show()
+# plt.savefig('attention_map.png', dpi=300, bbox_inches='tight')
+
+
 ########################Without Image###############################
 def remove_image_token(input_ids, img_tok_index, hidden_states=None):
     mask = input_ids != img_tok_index
     filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
     if hidden_states is not None:
         filtered_hidden_states = hidden_states[:, mask[0], :]
+        return filtered_input_ids, filtered_hidden_states
+    
+    return filtered_input_ids
+def remove_image_token_except_last(input_ids, img_tok_index, hidden_states=None):
+    # input_ids, loss_mask는 (1, seq_len) 형태라고 가정
+    # hidden_states는 (1, seq_len, hidden_dim) 형태라고 가정
+    
+    # 먼저 (1, seq_len) -> (seq_len,) 으로 차원을 줄임
+    flat_input_ids = input_ids.squeeze(0)   # (seq_len,)
+
+    # 32000(img_tok_index)인 위치 전부 찾기
+    positions = (flat_input_ids == img_tok_index).nonzero(as_tuple=True)[0]
+    
+    # 만약 32000이 여러 개라면, 마지막 위치만 남기고 다 제거할 마스크를 만든다
+    if len(positions) > 1:
+        last_pos = positions[-1]
+        
+        # 일단 전부 True로 초기화
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+        # 32000이었던 위치 전부 False로 설정
+        keep_mask[positions] = False
+        # 마지막 하나만 True로 되돌림
+        keep_mask[last_pos] = True
+    else:
+        # 32000이 없거나 한 개만 있을 경우엔 전부 유지
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+
+    # 마스크대로 input_ids, loss_mask 추려서 (1, -1)로 형태 맞춤
+    filtered_input_ids = flat_input_ids[keep_mask].unsqueeze(0)
+
+    if hidden_states is not None:
+        # hidden_states: (1, seq_len, hidden_dim) -> (seq_len, hidden_dim)
+        flat_hidden_states = hidden_states.squeeze(0)
+        
+        # keep_mask를 적용해 (남길 위치만 남기기)
+        filtered_hidden_states = flat_hidden_states[keep_mask, :].unsqueeze(0)
+        
         return filtered_input_ids, filtered_hidden_states
     
     return filtered_input_ids
@@ -170,7 +259,7 @@ from matplotlib.colors import LogNorm
 # (1) 예시 어텐션 맵 & input_ids 준비
 attention_map = attentions[0]   # torch.Size([1, 604, 604])
 print(torch.as_tensor(inputs["input_ids"]).shape)
-input_ids = remove_image_token(torch.as_tensor(inputs["input_ids"]),32000)  # torch.Size([1, 604]) 예시
+input_ids = remove_image_token_except_last(torch.as_tensor(inputs["input_ids"]),32000)  # torch.Size([1, 604]) 예시
 print(input_ids.shape)
 # (2) 배치 차원 제거
 attention_map = attention_map.squeeze(0)  # -> (604, 604)
