@@ -299,6 +299,8 @@ class LlavaForConditionalGeneration(LlavaPreTrainedModel):
         selected_image_feature = image_outputs.hidden_states[vision_feature_layer]
         if vision_feature_select_strategy == "default":
             selected_image_feature = selected_image_feature[:, 1:]
+            #selected_image_feature = selected_image_feature
+            
         elif vision_feature_select_strategy == "full":
             selected_image_feature = selected_image_feature
         else:

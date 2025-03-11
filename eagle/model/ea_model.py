@@ -70,7 +70,7 @@ class EaModel(nn.Module):
         self.ea_layer.load_state_dict(ea_layer_state_dict, strict=True)
         self.ea_layer.to(self.base_model.dtype).to(device)
         self.ea_layer.init_tree()
-
+    
     def get_tokenizer(self):
         """Get the tokenizer of the base model.
 
@@ -225,10 +225,27 @@ class EaModel(nn.Module):
             log=False,
             is_llama3=False,
             token_process=0,
+            color=False
             
 
     ):
-        tokenizer = AutoTokenizer.from_pretrained('lmsys/vicuna-7b-v1.3')
+        def colorize_text(input_ids, color, tokenizer):
+            # input_ids를 텍스트로 변환
+            input_ids = [i for i in input_ids if i != -1]
+            tokens = tokenizer.convert_ids_to_tokens(input_ids)
+
+            # 텍스트와 loss_mask를 이용하여 색상 적용
+            colored_text = ""
+            for token in tokens:
+                if color == "green":
+                    # loss_mask가 1인 토큰은 초록색
+                    colored_text += "\033[92m" + token + "\033[0m" + " "
+                else:
+                    # loss_mask가 0인 토큰은 빨간색
+                    colored_text += "\033[91m" + token + "\033[0m" + " "
+            return colored_text
+    
+        tokenizer = AutoTokenizer.from_pretrained('llava-hf/llava-1.5-7b-hf')
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
         max_length=max_length-self.ea_layer.total_tokens-10
@@ -270,6 +287,7 @@ class EaModel(nn.Module):
         
         # accept_length 누적 리스트
         accept_lengths = []
+        colorized_text = ""
         
 
         for idx in range(max_length):
@@ -297,6 +315,9 @@ class EaModel(nn.Module):
             )
             #tok = tokenizer.convert_ids_to_tokens(candidates[best_candidate][0:1+accept_length])
             #print(tok)
+            colorized_text += colorize_text(candidates[best_candidate][0:1],"red",tokenizer)
+            if accept_length > 1:
+                colorized_text += colorize_text(candidates[best_candidate][1:],"green",tokenizer)
             
             
             # accept_length 값을 리스트에 추가
@@ -336,8 +357,10 @@ class EaModel(nn.Module):
         
         if not log:
             return input_ids
-        else:
+        elif not color:
             return input_ids, new_token, idx, avg_accept_length
+        elif color:
+            return input_ids, new_token, idx, avg_accept_length, colorized_text
 
 
     @torch.no_grad()

@@ -20,7 +20,7 @@ import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-bigname="llava-hf/llava-1.5-7b-hf"
+bigname="llava-hf/llava-1.5-13b-hf"
 #bigname="lmsys/vicuna-13b-v1.5"
 
 def get_image_features(bigmodel, pixel_values: torch.FloatTensor):
@@ -82,7 +82,7 @@ def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
+    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
     
     ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
     ds = ds['train']
@@ -200,7 +200,7 @@ def build_dataset_rank(
     return ds1
 
 #bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
-bigtokenizer = AutoTokenizer.from_pretrained("lmsys/vicuna-7b-v1.5",use_fast=False)
+bigtokenizer = AutoTokenizer.from_pretrained("llava-hf/llava-1.5-13b-hf",use_fast=False)
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)

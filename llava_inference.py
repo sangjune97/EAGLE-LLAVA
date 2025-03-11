@@ -2,9 +2,9 @@ from PIL import Image
 import requests
 import inspect
 from transformers import AutoProcessor, AutoTokenizer, LlavaForConditionalGeneration
-model = LlavaForConditionalGeneration.from_pretrained("llava-hf/llava-1.5-7b-hf", device_map="auto")
-processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
-tokenizer = AutoTokenizer.from_pretrained("llava-hf/llava-1.5-7b-hf")
+model = LlavaForConditionalGeneration.from_pretrained("/home/sangjun/llava-1.5-7b-hf-cls", device_map="auto")
+processor = AutoProcessor.from_pretrained("/home/sangjun/llava-1.5-7b-hf-cls")
+tokenizer = AutoTokenizer.from_pretrained("/home/sangjun/llava-1.5-7b-hf-cls")
 
 prompt = "USER: <image>\nWhat's the content of the image? explain in very detail. ASSISTANT:"
 url = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Cat_August_2010-4.jpg/800px-Cat_August_2010-4.jpg"
@@ -12,6 +12,9 @@ image = Image.open(requests.get(url, stream=True).raw)
 
 inputs = processor(images=image, text=prompt, return_tensors="pt")
 print(inputs["input_ids"])
+def count_value(tensor, value): return (tensor == value).sum().item()
+
+print(count_value(inputs["input_ids"], 32000))
 # Generate
 generate_ids = model.generate(
     temperature=0.9,
@@ -34,3 +37,4 @@ print("Outputs:\n")
 print(output)
 print("Tokens:\n")
 #print(generate_ids)
+import pdb;pdb.set_trace()

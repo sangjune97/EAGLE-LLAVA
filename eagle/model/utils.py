@@ -539,14 +539,16 @@ def update_inference_inputs(
         sample_p,
         token_process
 ):
-    if token_process == 0:
-        process_token = nothing_image_token
-    elif token_process == 1:
+    if token_process == 1:
         process_token = remove_image_token
     elif token_process == 2:
         process_token = pool_image_token
     elif token_process == 3:
         process_token = remove_image_token_except_last
+    elif token_process == 4:
+        process_token = remove_image_token_except_first
+    else :
+        process_token = nothing_image_token
         
     prev_input_len = input_ids.shape[1]
     # Map the best candidate indices to the original indices in the sequence

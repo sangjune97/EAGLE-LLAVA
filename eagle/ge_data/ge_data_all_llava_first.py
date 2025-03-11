@@ -3,7 +3,7 @@ import copy
 
 parser = argparse.ArgumentParser(description='sp')
 parser.add_argument('--start', type=int, default=0)
-parser.add_argument('--end', type=int, default=100)
+parser.add_argument('--end', type=int, default=10)
 parser.add_argument('--index', type=int, default=1)
 parser.add_argument('--gpu_index', type=int, nargs='+', default=[0])
 parser.add_argument('--outdir', type=str, default='outdir0')
@@ -20,7 +20,7 @@ import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-bigname="llava-hf/llava-1.5-7b-hf"
+bigname="/home/sangjun/llava-1.5-7b-hf-cls"
 #bigname="lmsys/vicuna-13b-v1.5"
 
 def remove_image_token_except_first(input_ids, img_tok_index, loss_mask, hidden_states=None):
@@ -87,11 +87,12 @@ def longest_common_prefix(list1, list2):
     return common_prefix, prefix_length
 
 
+
 def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
+    processor = AutoProcessor.from_pretrained('/home/sangjun/llava-1.5-7b-hf-cls')
     image_folder = '/data/COCO/train2017'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
@@ -229,7 +230,7 @@ def build_dataset_rank(
     # dst.set_format(type="torch")
     return ds1
 
-bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
+bigtokenizer = AutoProcessor.from_pretrained('/home/sangjun/llava-1.5-7b-hf-cls').tokenizer
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
