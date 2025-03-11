@@ -508,7 +508,12 @@ class Model(nn.Module):
         # print("threshold",threshold)
         self.layers = nn.ModuleList([LlamaDecoderLayer(config, index) for index in range(config.num_hidden_layers)])
         self.fc = nn.Linear(2 * config.hidden_size, config.hidden_size, bias=bias)
-        self.conv = nn.Conv2d(2 * config.hidden_size, config.hidden_size, kernel_size=3, padding=1)
+        self.conv = nn.Sequential(
+            # depth-wise conv: in_channels와 out_channels를 동일하게, 그룹 수를 채널 수로 설정
+            nn.Conv2d(2 * config.hidden_size, 2 * config.hidden_size, kernel_size=3, padding=1, groups=2 * config.hidden_size),
+            # point-wise conv: 1x1 conv로 채널 수를 줄임
+            nn.Conv2d(2 * config.hidden_size, config.hidden_size, kernel_size=1)
+        )
         self.act = ACT2FN[config.hidden_act]
         self.logsoftmax = nn.LogSoftmax(dim=-1)
         for param in self.embed_tokens.parameters():
@@ -675,7 +680,6 @@ class Model(nn.Module):
         
         if image_features is not None:
             # token_mask: (B, L, 1)
-            import pdb;pdb.set_trace()
             token_mask = special_image_mask.any(dim=-1, keepdim=True)  # (batch, seq, 1)
             # 전체 토큰에 대해 concat (B, L, 2*hidden_size)
             concat = torch.cat((inputs_embeds, hidden_states), dim=-1)
