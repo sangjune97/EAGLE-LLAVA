@@ -508,7 +508,7 @@ class Model(nn.Module):
         # print("threshold",threshold)
         self.layers = nn.ModuleList([LlamaDecoderLayer(config, index) for index in range(config.num_hidden_layers)])
         self.fc = nn.Linear(2 * config.hidden_size, config.hidden_size, bias=bias)
-        self.conv = nn.Conv2d(2 * config.hidden_size, config.hidden_size, kernel_size=3, padding=1)
+        self.fc2 = nn.Linear(2 * config.hidden_size, config.hidden_size, bias=bias)
         self.act = ACT2FN[config.hidden_act]
         self.logsoftmax = nn.LogSoftmax(dim=-1)
         for param in self.embed_tokens.parameters():
@@ -674,30 +674,14 @@ class Model(nn.Module):
         inputs_embeds = inputs_embeds.to(hidden_states.dtype)
         
         if image_features is not None:
-            # token_mask: (B, L, 1)
             import pdb;pdb.set_trace()
             token_mask = special_image_mask.any(dim=-1, keepdim=True)  # (batch, seq, 1)
-            # 전체 토큰에 대해 concat (B, L, 2*hidden_size)
-            concat = torch.cat((inputs_embeds, hidden_states), dim=-1)
-            # 일반 token은 fc 적용 (B, L, hidden_size)
-            out_fc = self.fc(concat)
+            concat = torch.cat((inputs_embeds, hidden_states), dim=-1)  # (1,700,8192)
+            out_fc = self.fc(concat)    # 일반 token 처리 결과, (1,700,4096)
+            out_fc2 = self.fc2(concat)  # image token 처리 결과, (1,700,4096)
 
-            # image token만 conv 적용
-
-            # 각 배치별로 True인 토큰들을 추출 (총 196개씩이라고 가정)
-            # 만약 각 배치마다 image token들이 연속적으로 배치되어 있다면 아래와 같이 할 수 있음.
-            image_tokens = concat[token_mask.squeeze(-1)].view(batch_size, 24, 24, -1)  # (B, 14, 14, 2*hidden_size)
-            image_tokens = image_tokens.permute(0, 3, 1, 2)  # (B, 2*hidden_size, 14, 14)
-            
-            # conv 적용 -> (B, hidden_size, 24, 24)
-            image_conv_out = self.conv(image_tokens)
-            # 다시 flatten해서 sequence 형태로 변환 (B, 196, hidden_size)
-            image_conv_out = image_conv_out.flatten(2).transpose(1, 2)
-            
-            # 일반 token 처리 결과에서 image token 위치만 conv 결과로 대체
-            hidden_states = out_fc.clone()
-            hidden_states[token_mask.squeeze(-1)] = image_conv_out.view(-1, hidden_states.size(-1))
-            
+            # token_mask를 fc 결과와 fc2 결과 선택에 사용
+            hidden_states = torch.where(token_mask.expand_as(out_fc), out_fc2, out_fc)
         else :
             hidden_states = self.fc(torch.cat((inputs_embeds, hidden_states), dim=-1))
 
