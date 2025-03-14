@@ -21,7 +21,7 @@ train_config = {
     "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
     "num_warmup_steps": 2000,
-    "total_steps": 1600000,
+    "total_steps": 800000,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
@@ -33,7 +33,7 @@ train_config = {
     "mean": 0.0,
     "std": 0.2,
     "residual": "true,norm",
-    "max_len": 4096,
+    "max_len": 2048,
     #"max_len": 2048,
     # During training, truncating the training sequences means that the larger the setting, the more training data is used, and the better the effect, but it also consumes more VRAM.
     "config_path": args.configpath,
@@ -319,8 +319,8 @@ if accelerator.is_main_process:
         os.makedirs(args.cpdir)
 
 config = EConfig.from_pretrained(train_config["config_path"])
-#model = Model(config, load_emb=True, path=args.basepath)
-model = Model.from_pretrained(config, path=args.pretrainedpath)
+model = Model(config, load_emb=True, path=args.basepath)
+#model = Model.from_pretrained(config, path=args.pretrainedpath)
 criterion = nn.SmoothL1Loss(reduction="none")
 optimizer = optim.AdamW(model.parameters(), lr=train_config["lr"], betas=(train_config["b1"], train_config["b2"]))
 
