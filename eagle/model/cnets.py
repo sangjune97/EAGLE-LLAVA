@@ -508,7 +508,6 @@ class Model(nn.Module):
         # print("threshold",threshold)
         self.layers = nn.ModuleList([LlamaDecoderLayer(config, index) for index in range(config.num_hidden_layers)])
         self.fc = nn.Linear(2 * config.hidden_size, config.hidden_size, bias=bias)
-        self.fc2 = nn.Linear(2 * config.hidden_size, config.hidden_size, bias=bias)
         self.act = ACT2FN[config.hidden_act]
         self.logsoftmax = nn.LogSoftmax(dim=-1)
         for param in self.embed_tokens.parameters():
@@ -674,15 +673,18 @@ class Model(nn.Module):
         inputs_embeds = inputs_embeds.to(hidden_states.dtype)
         
         if image_features is not None:
-            import pdb;pdb.set_trace()
             token_mask = special_image_mask.any(dim=-1, keepdim=True)  # (batch, seq, 1)
+            
+            # 일반 토큰 처리 → concat 후 fc 처리
             concat = torch.cat((inputs_embeds, hidden_states), dim=-1)  # (1,700,8192)
-            out_fc = self.fc(concat)    # 일반 token 처리 결과, (1,700,4096)
-            out_fc2 = self.fc2(concat)  # image token 처리 결과, (1,700,4096)
-
-            # token_mask를 fc 결과와 fc2 결과 선택에 사용
+            out_fc = self.fc(concat)  # 일반 토큰 처리 결과
+            
+            # 이미지 토큰 처리 → inputs_embeds 그대로 유지
+            out_fc2 = inputs_embeds  # hidden_states 사용 X
+            
+            # token_mask에 따라 결과 선택
             hidden_states = torch.where(token_mask.expand_as(out_fc), out_fc2, out_fc)
-        else :
+        else:
             hidden_states = self.fc(torch.cat((inputs_embeds, hidden_states), dim=-1))
 
         all_hidden_states = () if output_hidden_states else None
