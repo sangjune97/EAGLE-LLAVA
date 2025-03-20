@@ -397,11 +397,19 @@ for epoch in tqdm(range(num_epochs + 1)):
     top_3acc = accelerator.gather_for_metrics(top_3acc)
     if accelerator.is_local_main_process:
         for id, i in enumerate(top_3acc):
-            wandb.log({f'train/epochtop_{id + 1}_acc': i.sum().item() / total})
+            accuracy = i.sum().item() / total if total != 0 else 0
+            wandb.log({f'train/epochtop_{id + 1}_acc': accuracy})
     if accelerator.is_local_main_process:
+        if total != 0:
+            accuracy = 100 * correct / total
+            wandb_accuracy = correct / total
+        else:
+            accuracy = 0
+            wandb_accuracy = 0
+
         print('Epoch [{}/{}], Loss: {:.4f}'.format(epoch + 1, num_epochs, epoch_loss))
-        print('Train Accuracy: {:.2f}%'.format(100 * correct / total))
-        wandb.log({"train/epochacc": correct / total, "train/epochloss": epoch_loss})
+        print('Train Accuracy: {:.2f}%'.format(accuracy))
+        wandb.log({"train/epochacc": wandb_accuracy, "train/epochloss": epoch_loss})
 
     if (epoch + 1) % train_config["save_freq"]:
         top_3acc = [0 for _ in range(3)]
@@ -457,7 +465,8 @@ for epoch in tqdm(range(num_epochs + 1)):
         top_3acc = accelerator.gather_for_metrics(top_3acc)
         if accelerator.is_local_main_process:
             for id, i in enumerate(top_3acc):
-                wandb.log({f'test/top_{id + 1}_acc': i.sum().item() / total})
+                test_accuracy = i.sum().item() / total if total != 0 else 0
+                wandb.log({f'test/top_{id + 1}_acc': test_accuracy})
         epoch_loss /= num_batches
         if accelerator.is_local_main_process:
             print('Test Epoch [{}/{}], Loss: {:.4f}'.format(epoch + 1, num_epochs, epoch_loss))

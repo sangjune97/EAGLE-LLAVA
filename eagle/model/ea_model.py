@@ -240,7 +240,7 @@ class EaModel(nn.Module):
         #assert input_ids.shape[0] == 1, "Only support batch size 1 for now!!"
         # Avoid modifying the input_ids in-place
 
-        padding=(torch.zeros(1,1,dtype=torch.long)-1).to(input_ids.device)
+        padding=(torch.zeros(1,1,dtype=torch.long)-1)
         input_ids = input_ids.clone()
         self.ea_layer.reset_kv()
 
@@ -289,7 +289,7 @@ class EaModel(nn.Module):
                 retrieve_indices,
             )
             
-
+            padding = padding.to(draft_tokens.device)
             draft_tokens=torch.cat((draft_tokens,padding),dim=1)
             candidates=draft_tokens[0,retrieve_indices]
             best_candidate, accept_length, sample_p = evaluate_posterior(
@@ -300,7 +300,7 @@ class EaModel(nn.Module):
             
             
             # accept_length 값을 리스트에 추가
-            accept_lengths.append(accept_length)
+            accept_lengths.append(float(accept_length))
             
             #print(accept_length)
             #with Timer("update_inference_inputs"):
@@ -332,6 +332,7 @@ class EaModel(nn.Module):
                 break
         
         # 평균 accept_length 계산
+        
         avg_accept_length = sum(accept_lengths) / len(accept_lengths) if accept_lengths else 0.0
         
         if not log:

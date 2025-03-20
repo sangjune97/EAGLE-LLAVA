@@ -363,6 +363,7 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
     filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
     # Clone the output hidden states
     
+    
     draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(filtered_hidden_states, filtered_input_ids, model.base_model.language_model.lm_head,logits_processor,image_features)
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, orig, hidden_states, token
 
@@ -593,8 +594,7 @@ def update_inference_inputs(
     draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(accept_hidden_state_new,
                                               input_ids=filtered_input_ids, head=model.base_model.language_model.lm_head,logits_processor=logits_processor)
 
-    
-    new_token += accept_length + 1
+    new_token += int(accept_length) + 1
 
     return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token
 

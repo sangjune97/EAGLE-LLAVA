@@ -669,6 +669,7 @@ class Model(nn.Module):
         #        use_cache = False
 
         # hidden_states=self.act(self.fc(torch.cat((inputs_embeds,hidden_states),dim=-1)))
+        
         inputs_embeds = inputs_embeds.to(hidden_states.dtype)
         hidden_states = self.fc(torch.cat((inputs_embeds, hidden_states), dim=-1))
 

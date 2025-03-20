@@ -20,7 +20,7 @@ import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-bigname="llava-hf/llava-1.5-7b-hf"
+bigname="llava-hf/llava-1.5-13b-hf"
 #bigname="lmsys/vicuna-13b-v1.5"
         
 def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
@@ -33,7 +33,22 @@ def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
     
     return filtered_input_ids, filtered_loss_mask
 
+def colorize_text(input_ids, loss_mask, tokenizer):
+        # input_ids를 텍스트로 변환
+        tokens = tokenizer.convert_ids_to_tokens(input_ids)
 
+        # 텍스트와 loss_mask를 이용하여 색상 적용
+        colored_text = ""
+        for token, mask in zip(tokens, loss_mask):
+            if mask == 1:
+                # loss_mask가 1인 토큰은 초록색
+                colored_text += "\033[92m" + token + "\033[0m" + " "
+            else:
+                # loss_mask가 0인 토큰은 빨간색
+                colored_text += "\033[91m" + token + "\033[0m" + " "
+
+        print(colored_text)
+        
 def longest_common_prefix(list1, list2):
     prefix_length = 0
     min_length = min(len(list1), len(list2))
@@ -52,7 +67,7 @@ def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
+    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
     image_folder = '/data/COCO/train2017'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
@@ -63,21 +78,6 @@ def build_dataset_rank(
     original_columns1 = ds1.column_names
     num_proc = 4
     
-    def colorize_text(input_ids, loss_mask, tokenizer):
-        # input_ids를 텍스트로 변환
-        tokens = tokenizer.convert_ids_to_tokens(input_ids)
-
-        # 텍스트와 loss_mask를 이용하여 색상 적용
-        colored_text = ""
-        for token, mask in zip(tokens, loss_mask):
-            if mask == 1:
-                # loss_mask가 1인 토큰은 초록색
-                colored_text += "\033[92m" + token + "\033[0m" + " "
-            else:
-                # loss_mask가 0인 토큰은 빨간색
-                colored_text += "\033[91m" + token + "\033[0m" + " "
-
-        print(colored_text)
     
     def contains_special_token(turn, tokenizer, special_token_id=32000):
         input_ids = tokenizer(turn).input_ids
@@ -93,7 +93,7 @@ def build_dataset_rank(
             "loss_mask": []
         }
         for i in range(len(examples['id'])):
-            conv = get_conversation_template("llava_v1")
+            conv = get_conversation_template("vicuna")
             roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
             sorce= examples['conversations'][i]
             
@@ -177,7 +177,7 @@ def build_dataset_rank(
     # dst.set_format(type="torch")
     return ds1
 
-bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
+bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf').tokenizer
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
@@ -202,6 +202,8 @@ def ge(data):
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
     image_features = outs_big.image_hidden_states
     hidden_state_big = outs_big.hidden_states[-1]
+    #colorize_text(input_ids.cpu()[0], loss_mask.cpu()[0], bigtokenizer)
+    #input()
     td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu()[0],"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()[0]}
     return td
 
