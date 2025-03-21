@@ -680,7 +680,7 @@ class Model(nn.Module):
             out_fc = self.fc(concat)  # 일반 토큰 처리 결과
             
             # 이미지 토큰 처리 → inputs_embeds 그대로 유지
-            out_fc2 = inputs_embeds  # hidden_states 사용 X
+            out_fc2 = hidden_states  # hidden_states 사용 X
             
             # token_mask에 따라 결과 선택
             hidden_states = torch.where(token_mask.expand_as(out_fc), out_fc2, out_fc)
