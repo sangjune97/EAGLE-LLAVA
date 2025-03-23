@@ -99,7 +99,7 @@ def eval_model(args):
                                    "total_time": total_time,
                                    "num_tokens": num_tokens,
                                    "tok_per_sec": tok_per_sec,   
-                                   "avg_accept_length":avg_accept_length.item(),
+                                   "avg_accept_length":avg_accept_length,
                                    "metadata": {}}) + "\n")
         ans_file.flush()
     ans_file.close()
