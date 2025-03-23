@@ -307,7 +307,7 @@ class EaModel(nn.Module):
                 retrieve_indices,
             )
             
-
+            padding=padding.to(draft_tokens.device)
             draft_tokens=torch.cat((draft_tokens,padding),dim=1)
             candidates=draft_tokens[0,retrieve_indices]
             best_candidate, accept_length, sample_p = evaluate_posterior(
