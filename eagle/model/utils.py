@@ -596,7 +596,7 @@ def update_inference_inputs(
                                               input_ids=filtered_input_ids, head=model.base_model.language_model.lm_head,logits_processor=logits_processor)
 
     
-    new_token += accept_length + 1
+    new_token += int(accept_length) + 1
 
     return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token
 
