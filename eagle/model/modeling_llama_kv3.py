@@ -99,8 +99,6 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     )
 
 
-import torch.nn as nn
-import torch
 
 
 class LlamaRMSNorm(nn.Module):
@@ -609,7 +607,7 @@ class LlamaAttention(nn.Module):
     def _init_rope(self):
         if self.config.rope_scaling is None:
             self.rotary_emb = LlamaRotaryEmbedding(
-                self.head_dim, max_position_embeddings=self.max_position_embeddings,base=self.config.rope_theta
+                self.head_dim, max_position_embeddings=self.max_position_embeddings, base=self.config.rope_theta
             )
         else:
             try:
@@ -1183,6 +1181,9 @@ class LlamaModel(LlamaPreTrainedModel):
         # add hidden states from the last decoder layer
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
+
+        # !!!
+        # all_hidden_states += (hidden_states,)
 
         next_cache = next_decoder_cache if use_cache else None
         if not return_dict:

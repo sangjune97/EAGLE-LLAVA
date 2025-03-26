@@ -21,7 +21,7 @@ train_config = {
     "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
     "num_warmup_steps": 2000,
-    "total_steps": 800000,
+    "total_steps": 1600000,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
@@ -113,10 +113,10 @@ class AddGaussianNoise:
         self.std = std
 
     def __call__(self, data):
-        tensor = data["hidden_state_big"]
+        tensor = data["hidden_states"]
         noise = torch.randn(tensor.size()) * self.std + self.mean
         noisy_tensor = tensor + noise
-        data["hidden_state_big"] = noisy_tensor
+        data["hidden_states"] = noisy_tensor
         return data
 
 
@@ -125,10 +125,10 @@ class AddUniformNoise:
         self.std = std
 
     def __call__(self, data):
-        tensor = data["hidden_state_big"]
+        tensor = data["hidden_states"]
         noise = (torch.rand_like(tensor) - 0.5) * self.std * 512 / tensor.shape[1]
         noisy_tensor = tensor + noise
-        data["hidden_state_big"] = noisy_tensor
+        data["hidden_states"] = noisy_tensor
         return data
 
 
@@ -141,18 +141,19 @@ class CustomDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
-        # try:
         data = torch.load(self.data[index],weights_only=True)
         new_data = {}
-        hidden_state = data['hidden_state'][:train_config["max_len"]][None, :]
+        hidden_state = data['hidden_states'][:train_config["max_len"]][None, :]
+        last_hidden_state = data['last_hidden_state'][:train_config["max_len"]][None, :]
+        
         input_ids = data['input_ids'][:train_config["max_len"]][None, :]
         loss_mask = data["loss_mask"][:train_config["max_len"]][None, :]
         image_features = data["image_features"][:train_config["max_len"]][None, :]
 
 
         length = hidden_state.shape[1]
-        attention_mask = [1] * length
         # length_q = data['query_ids'].shape[1]
+        attention_mask = [1] * length
         loss_mask = loss_mask[0].tolist()
         loss_mask[-1] = 0
 
@@ -160,14 +161,14 @@ class CustomDataset(Dataset):
         zeropadding = torch.tensor([[0]])
         input_ids_target = torch.cat((input_ids_target, zeropadding), dim=1)
 
-        target = hidden_state[:, 1:, :]
+        target = last_hidden_state[:, 1:, :]
         zeropadding = torch.zeros(1, 1, target.shape[2])
         target = torch.cat((target, zeropadding), dim=1)
         loss_mask[-1] = 0
         new_data["attention_mask"] = attention_mask
         new_data["loss_mask"] = loss_mask
         new_data["target"] = target
-        new_data["hidden_state_big"] = hidden_state
+        new_data["hidden_states"] = hidden_state
         new_data["input_ids"] = input_ids_target
         new_data["image_features"] = image_features
 
@@ -195,9 +196,9 @@ class DataCollatorWithPadding:
 
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        max_length = max(item['hidden_state_big'].shape[1] for item in features)
+        max_length = max(item['hidden_states'].shape[1] for item in features)
         batch_input_ids = torch.cat([self.paddingtensor2D(item['input_ids'], max_length) for item in features])
-        batch_hidden_states = torch.cat([self.paddingtensor(item['hidden_state_big'], max_length) for item in features])
+        batch_hidden_states = torch.cat([self.paddingtensor(item['hidden_states'], max_length) for item in features])
         batch_image_features = torch.cat([item['image_features'] for item in features])
         batch_target = torch.cat([self.paddingtensor(item['target'], max_length) for item in features])
         batch_loss_mask = torch.tensor(

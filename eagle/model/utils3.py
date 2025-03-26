@@ -33,106 +33,7 @@ class Timer:
         torch.cuda.synchronize()
         elapsed = time.perf_counter() - self.start
         print(f'{self.name} took {elapsed} seconds')
-        
-def remove_image_token_except_first(input_ids, img_tok_index, hidden_states=None):
-    # input_ids, loss_mask는 (1, seq_len) 형태라고 가정
-    # hidden_states는 (1, seq_len, hidden_dim) 형태라고 가정
-    
-    # 먼저 (1, seq_len) -> (seq_len,) 으로 차원을 줄임
-    flat_input_ids = input_ids.squeeze(0)   # (seq_len,)
 
-    # 32000(img_tok_index)인 위치 전부 찾기
-    positions = (flat_input_ids == img_tok_index).nonzero(as_tuple=True)[0]
-    
-    # 만약 32000이 여러 개라면, 마지막 위치만 남기고 다 제거할 마스크를 만든다
-    if len(positions) > 1:
-        last_pos = positions[0]
-        
-        # 일단 전부 True로 초기화
-        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
-        # 32000이었던 위치 전부 False로 설정
-        keep_mask[positions] = False
-        # 마지막 하나만 True로 되돌림
-        keep_mask[last_pos] = True
-    else:
-        # 32000이 없거나 한 개만 있을 경우엔 전부 유지
-        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
-
-    # 마스크대로 input_ids, loss_mask 추려서 (1, -1)로 형태 맞춤
-    filtered_input_ids = flat_input_ids[keep_mask].unsqueeze(0)
-
-    if hidden_states is not None:
-        # hidden_states: (1, seq_len, hidden_dim) -> (seq_len, hidden_dim)
-        flat_hidden_states = hidden_states.squeeze(0)
-        
-        # keep_mask를 적용해 (남길 위치만 남기기)
-        filtered_hidden_states = flat_hidden_states[keep_mask, :].unsqueeze(0)
-        
-        return filtered_input_ids, filtered_hidden_states
-    
-    return filtered_input_ids
-
-def remove_image_token_except_last(input_ids, img_tok_index, hidden_states=None):
-    # input_ids, loss_mask는 (1, seq_len) 형태라고 가정
-    # hidden_states는 (1, seq_len, hidden_dim) 형태라고 가정
-    
-    # 먼저 (1, seq_len) -> (seq_len,) 으로 차원을 줄임
-    flat_input_ids = input_ids.squeeze(0)   # (seq_len,)
-
-    # 32000(img_tok_index)인 위치 전부 찾기
-    positions = (flat_input_ids == img_tok_index).nonzero(as_tuple=True)[0]
-    
-    # 만약 32000이 여러 개라면, 마지막 위치만 남기고 다 제거할 마스크를 만든다
-    if len(positions) > 1:
-        last_pos = positions[-1]
-        
-        # 일단 전부 True로 초기화
-        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
-        # 32000이었던 위치 전부 False로 설정
-        keep_mask[positions] = False
-        # 마지막 하나만 True로 되돌림
-        keep_mask[last_pos] = True
-    else:
-        # 32000이 없거나 한 개만 있을 경우엔 전부 유지
-        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
-
-    # 마스크대로 input_ids, loss_mask 추려서 (1, -1)로 형태 맞춤
-    filtered_input_ids = flat_input_ids[keep_mask].unsqueeze(0)
-
-    if hidden_states is not None:
-        # hidden_states: (1, seq_len, hidden_dim) -> (seq_len, hidden_dim)
-        flat_hidden_states = hidden_states.squeeze(0)
-        
-        # keep_mask를 적용해 (남길 위치만 남기기)
-        filtered_hidden_states = flat_hidden_states[keep_mask, :].unsqueeze(0)
-        
-        return filtered_input_ids, filtered_hidden_states
-    
-    return filtered_input_ids
-
-def remove_image_token(input_ids, img_tok_index, hidden_states=None):
-    mask = input_ids != img_tok_index
-    filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
-    if hidden_states is not None:
-        filtered_hidden_states = hidden_states[:, mask[0], :]
-        return filtered_input_ids, filtered_hidden_states
-    
-    return filtered_input_ids
-
-def pool_image_token(input_ids, img_tok_index, hidden_states=None):
-    mask = input_ids != img_tok_index
-    filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
-    if hidden_states is not None:
-        filtered_hidden_states = hidden_states[:, mask[0], :]
-        return filtered_input_ids, filtered_hidden_states
-    
-    return filtered_input_ids
-
-def nothing_image_token(input_ids, img_tok_index, hidden_states=None):
-    if hidden_states is not None:
-        return input_ids, hidden_states
-    
-    return input_ids
 
 def prepare_logits_processor(
         temperature: float = 0.0,
@@ -328,24 +229,10 @@ def initialize_tree0(input_ids, model, past_key_values, logits_processor):
     #     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, hidden_states, token
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token
 
-def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_processor, token_process):
-    if token_process == 1:
-        process_token = remove_image_token
-    elif token_process == 2:
-        process_token = pool_image_token
-    elif token_process == 3:
-        process_token = remove_image_token_except_last
-    elif token_process == 4:
-        process_token = remove_image_token_except_first
-    else :
-        process_token = nothing_image_token
-        
+def initialize_tree(input_ids, model, past_key_values, logits_processor):
     outputs, orig, hidden_states = model(
-        input_ids, pixel_values, past_key_values=past_key_values, output_orig=True
+        input_ids, past_key_values=past_key_values, output_orig=True
     )
-    image_features = None
-    if pixel_values is not None:
-        image_features = model.get_image_features(pixel_values)
 
     if logits_processor is not None:
         logits = orig[:, -1]
@@ -355,28 +242,23 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
     else:
         token = torch.argmax(orig[:, -1])
         token = token[None, None]
+    input_ids = torch.cat((input_ids, token.to(input_ids.device)), dim=1)
+
     # Clone the output hidden states
     if model.use_eagle3:
         ea_device = model.ea_layer.lm_head.weight.device
         if outputs["hidden_states"][0].device != ea_device:
             outputs["hidden_states"] = [x.to(ea_device) for x in outputs["hidden_states"]]
-        hidden_states = torch.cat(outputs["hidden_states"],dim=-1)
-        
-    ea_layer_device = model.ea_layer.fc.weight.device
-    filtered_input_ids, filtered_hidden_states = process_token(input_ids, model.base_model.config.image_token_index, hidden_states)
-    filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
-    filtered_input_ids = filtered_input_ids.to(ea_layer_device)
-    filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
-    
-    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(filtered_hidden_states, filtered_input_ids, model.base_model.language_model.lm_head,logits_processor,image_features)
+        hidden_states=torch.cat(outputs["hidden_states"],dim=-1)
+    draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(hidden_states, input_ids, model.base_model.lm_head,logits_processor)
     return draft_tokens, retrieve_indices,tree_mask,tree_position_ids, orig, hidden_states, token
 
 
 def reset_tree_mode(
         model,
 ):
-    model.base_model.language_model.model.tree_mask = None
-    model.base_model.language_model.model.tree_mode = None
+    model.base_model.model.tree_mask = None
+    model.base_model.model.tree_mode = None
 
 
 def reset_past_key_values(passed_key_values: List[torch.Tensor]) -> List[torch.Tensor]:
@@ -424,22 +306,20 @@ def generate_candidates(tree_logits, tree_indices, retrieve_indices, sample_toke
 def tree_decoding(
         model,
         tree_candidates,
-        pixel_values,
         past_key_values,
         tree_position_ids,
         input_ids,
         retrieve_indices,
 ):
-    pixel_values=None
     position_ids = tree_position_ids + input_ids.shape[1]
+
     outputs, tree_logits, hidden_state = model(
         tree_candidates,
-        pixel_values,
         output_orig=True,
         past_key_values=past_key_values,
         position_ids=position_ids,
     )
-    
+
     if model.use_eagle3:
         ea_device = model.ea_layer.lm_head.weight.device
         if outputs["hidden_states"][0].device != ea_device:
@@ -546,20 +426,8 @@ def update_inference_inputs(
         current_length_data,
         model,
         hidden_state_new,
-        sample_p,
-        token_process
+        sample_p
 ):
-    if token_process == 1:
-        process_token = remove_image_token
-    elif token_process == 2:
-        process_token = pool_image_token
-    elif token_process == 3:
-        process_token = remove_image_token_except_last
-    elif token_process == 4:
-        process_token = remove_image_token_except_first
-    else :
-        process_token = nothing_image_token
-        
     prev_input_len = input_ids.shape[1]
     # Map the best candidate indices to the original indices in the sequence
     select_indices = (
@@ -569,9 +437,6 @@ def update_inference_inputs(
     input_ids = torch.cat(
         [input_ids, candidates[None, best_candidate, : accept_length + 1].to(input_ids.device)], dim=-1
     )
-    
-    #selected_tokens = model.tokenizer.batch_decode(candidates[None, best_candidate, 1: accept_length + 1].tolist())
-    #print(selected_tokens)
     # Update the past key values based on the selected tokens
     # Source tensor that contains relevant past information based on the selected candidate
     for past_key_values_data in past_key_values_data_list:
@@ -586,7 +451,8 @@ def update_inference_inputs(
 
     retrieve_hidden_state_new = hidden_state_new[:, retrieve_indices]
     accept_hidden_state_new = retrieve_hidden_state_new[:, best_candidate, : accept_length + 1]
-
+    # token=model.base_model.lm_head(accept_hidden_state_new[:,-1]).argmax()
+    # token=token[None,None]
     prob = sample_p
     if logits_processor is not None:
         token = torch.multinomial(prob, 1)
@@ -594,19 +460,13 @@ def update_inference_inputs(
     else:
         token = torch.argmax(prob)
         token = token[None, None]
-    ea_layer_device = model.ea_layer.fc.weight.device
-
-    input_ids = input_ids.to(ea_layer_device)
-    filtered_input_ids = process_token(input_ids, model.base_model.config.image_token_index)
-    filtered_input_ids = filtered_input_ids.to(ea_layer_device)
-    filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
-    accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)
-    
+    # hidden_state = torch.cat((hidden_state, accept_hidden_state_new), dim=1)
     draft_tokens, retrieve_indices,tree_mask,tree_position_ids = model.ea_layer.topK_genrate(accept_hidden_state_new,
-                                              input_ids=filtered_input_ids, head=model.base_model.language_model.lm_head,logits_processor=logits_processor)
+                                              input_ids=torch.cat((input_ids, token.to(input_ids.device)), dim=1),
+                                              head=model.base_model.lm_head,logits_processor=logits_processor)
 
-    
-    new_token += int(accept_length) + 1
+
+    new_token += accept_length + 1
 
     return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token
 

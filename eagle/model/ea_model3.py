@@ -5,12 +5,10 @@ import time
 import torch
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
-from transformers import AutoTokenizer, AutoProcessor
+from transformers import AutoTokenizer
 import os
-from transformers import PreTrainedModel, PretrainedConfig, AutoConfig, LlavaForConditionalGeneration
+from transformers import PreTrainedModel, PretrainedConfig, AutoConfig
 
-
-from .modeling_llava_kv import LlavaForConditionalGeneration as KVLlavaForCausalLM
 from .modeling_llama_kv import LlamaForCausalLM as KVLlamaForCausalLM
 from .modeling_mixtral_kv import MixtralForCausalLM as KVMixtralForCausalLM
 from .modeling_qwen2_kv import LlamaForCausalLM as KVQwen2ForCausalLM
@@ -20,9 +18,6 @@ from .kv_cache import initialize_past_key_values
 from .cnets import Model
 from .cnets1 import Model as Model1
 from .configs import EConfig
-
-
-
 
 
 class EaModel(nn.Module):
@@ -42,12 +37,11 @@ class EaModel(nn.Module):
 
         super().__init__()
         self.base_model = base_model
-        self.config = base_model.language_model.config
-        self.hidden_size = base_model.language_model.lm_head.weight.shape[-1]
-        self.vocab_size = base_model.language_model.lm_head.weight.shape[0]
+        self.config = base_model.config
+        self.hidden_size = base_model.lm_head.weight.shape[-1]
+        self.vocab_size = base_model.lm_head.weight.shape[0]
         self.base_model_name_or_path = base_model_name_or_path
-        self.processor = AutoProcessor.from_pretrained(self.base_model_name_or_path)
-        self.tokenizer = self.processor.tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_name_or_path, use_fast=False)
         self.use_eagle3 = use_eagle3
         config = EConfig.from_pretrained(ea_model_path)
         with open(ea_model_path, "r") as f:
@@ -65,11 +59,11 @@ class EaModel(nn.Module):
 
         low_memory = False
 
-        device = base_model.language_model.model.layers[-1].self_attn.q_proj.weight.device
-        if device!=base_model.language_model.lm_head.weight.device:
+        device = base_model.model.layers[-1].self_attn.q_proj.weight.device
+        if device != base_model.lm_head.weight.device:
             self.ea_layer.diff_device = True
             if not low_memory:
-                self.ea_layer.headweight = base_model.language_model.lm_head.weight.clone().to(device)
+                self.ea_layer.headweight = base_model.lm_head.weight.clone().to(device)
             else:
                 self.ea_layer.layer_device = device
 
@@ -112,10 +106,6 @@ class EaModel(nn.Module):
             base_model = KVQwen2ForCausalLM.from_pretrained(
                 base_model_path, **kwargs
             )
-        elif Type == 'LlavaForConditionalGeneration':
-            base_model=KVLlavaForCausalLM.from_pretrained(
-                base_model_path, **kwargs
-            )
         else:
             base_model = KVMixtralForCausalLM.from_pretrained(
                 base_model_path, **kwargs
@@ -149,10 +139,8 @@ class EaModel(nn.Module):
             ea_layer_state_dict
         )
 
-
-
         if total_token == -1:
-            device = model.base_model.language_model.model.layers[0].self_attn.q_proj.weight.device
+            device = model.base_model.model.layers[0].self_attn.q_proj.weight.device
             cans = [40, 48, 50, 56, 60]
             x = [1, 1.05, 1.07, 1.1, 1.13]
             times = []
@@ -178,26 +166,23 @@ class EaModel(nn.Module):
     def forward(
             self,
             input_ids=None,
-            pixel_values=None,
             attention_mask=None,
             past_key_values=None,
             output_orig=False,
             position_ids=None,
     ):
-        
+
         with torch.inference_mode():
             # Pass input through the base model
-            outputs = self.base_model(
+            outputs = self.base_model.model(
                 input_ids=input_ids,
-                pixel_values=pixel_values,
                 attention_mask=attention_mask,
                 past_key_values=past_key_values,
                 position_ids=position_ids,
-                output_hidden_states=True
             )
             if output_orig:
-                orig = outputs[0]
-            hidden_states = outputs[2][-1]
+                orig = self.base_model.lm_head(outputs[0])
+            hidden_states = outputs[0]
 
         if output_orig:
             return outputs, orig, hidden_states
@@ -208,7 +193,6 @@ class EaModel(nn.Module):
     def eagenerate(
             self,
             input_ids,
-            pixel_values,
             temperature=0.0,
             top_p=0.0,
             top_k=0.0,
@@ -216,28 +200,8 @@ class EaModel(nn.Module):
             max_length=2048,
             log=False,
             is_llama3=False,
-            token_process=0,
-            color=False
-    ):
-        if color:
-            tokenizer = AutoTokenizer.from_pretrained('llava-hf/llava-1.5-7b-hf')
-        def colorize_text(input_ids, color, tokenizer):
-            # input_ids를 텍스트로 변환
-            input_ids = [i for i in input_ids if i != -1]
-            tokens = tokenizer.convert_ids_to_tokens(input_ids)
 
-            # 텍스트와 loss_mask를 이용하여 색상 적용
-            colored_text = ""
-            for token in tokens:
-                if color == "green":
-                    # loss_mask가 1인 토큰은 초록색
-                    colored_text += "\033[92m" + token + "\033[0m" + " "
-                else:
-                    # loss_mask가 0인 토큰은 빨간색
-                    colored_text += "\033[91m" + token + "\033[0m" + " "
-            return colored_text
-    
-        
+    ):
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
 
@@ -265,32 +229,30 @@ class EaModel(nn.Module):
                 past_key_values,
                 past_key_values_data,
                 current_length_data,
-            ) = initialize_past_key_values(self.base_model.language_model,max_length=max_length)
+            ) = initialize_past_key_values(self.base_model,max_length=max_length)
             self.past_key_values = past_key_values
             self.past_key_values_data = past_key_values_data
             self.current_length_data = current_length_data
 
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
-        draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
-            input_ids, self, pixel_values, past_key_values, logits_processor, token_process
+        draft_tokens, retrieve_indices, tree_mask, tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
+            input_ids, self, past_key_values, logits_processor
         )
         new_token = 0
         
         # accept_length 누적 리스트
         accept_lengths = []
-        colorized_text = ""
         max_length = max_length - self.ea_layer.total_tokens - 10
         for idx in range(max_length):
             # with Timer("all"):
-            self.base_model.language_model.model.tree_mask = tree_mask
+            self.base_model.model.tree_mask = tree_mask
 
             draft_tokens = draft_tokens.to(input_ids.device)
             # with Timer("tree_decoding"):
             logits, hidden_state_new, outputs = tree_decoding(
                 self,
                 draft_tokens,
-                pixel_values,
                 past_key_values,
                 tree_position_ids,
                 input_ids,
@@ -298,19 +260,11 @@ class EaModel(nn.Module):
             )
             # retrieve_indices=tree_buffers["retrieve_indices"]
             # logits = logits[0, retrieve_indices]
-            padding=padding.to(draft_tokens.device)
             draft_tokens = torch.cat((draft_tokens, padding), dim=1)
             candidates = draft_tokens[0, retrieve_indices]
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
-            #tok = tokenizer.convert_ids_to_tokens(candidates[best_candidate][0:1+accept_length])
-            #print(tok)
-            if color:
-                colorized_text += colorize_text(candidates[best_candidate][0:1],"red",tokenizer)
-                if accept_length > 1:
-                    colorized_text += colorize_text(candidates[best_candidate][1:],"green",tokenizer)
-            
             
             # accept_length 값을 리스트에 추가
             accept_lengths.append(float(accept_length))
@@ -328,8 +282,7 @@ class EaModel(nn.Module):
                 current_length_data,
                 self,
                 hidden_state_new,
-                sample_p,
-                token_process
+                sample_p
             )
 
             if is_llama3:
@@ -349,11 +302,8 @@ class EaModel(nn.Module):
         
         if not log:
             return input_ids
-        elif not color:
+        else:
             return input_ids, new_token, idx, avg_accept_length
-        elif color:
-            return input_ids, new_token, idx, avg_accept_length, colorized_text
-
 
     @torch.no_grad()
     def naivegenerate(
@@ -370,7 +320,7 @@ class EaModel(nn.Module):
     ):
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        max_length = max_length - self.ea_layer.total_tokens - 10
+
 
         if temperature > 1e-5:
             logits_processor = prepare_logits_processor(temperature=temperature, top_p=top_p, top_k=top_k)
@@ -382,8 +332,6 @@ class EaModel(nn.Module):
         padding = (torch.zeros(1, 1, dtype=torch.long) - 1).to(input_ids.device)
         input_ids = input_ids.clone()
         self.ea_layer.reset_kv()
-
-
 
         # Initialize the past key and value states
         if hasattr(self, "past_key_values"):
@@ -397,7 +345,7 @@ class EaModel(nn.Module):
                 past_key_values,
                 past_key_values_data,
                 current_length_data,
-            ) = initialize_past_key_values(self.base_model)
+            ) = initialize_past_key_values(self.base_model,max_length=max_length)
             self.past_key_values = past_key_values
             self.past_key_values_data = past_key_values_data
             self.current_length_data = current_length_data
@@ -406,7 +354,7 @@ class EaModel(nn.Module):
         reset_tree_mode(self)
         outputs = self.base_model(input_ids, past_key_values=past_key_values, use_cache=True)
         new_token = 0
-
+        max_length = max_length - self.ea_layer.total_tokens - 10
         for idx in range(max_length):
             if logits_processor is not None:
                 logits = outputs.logits[:, -1]
@@ -417,7 +365,7 @@ class EaModel(nn.Module):
                 input_id = outputs.logits[:, -1:].argmax(dim=-1)
             outputs = self.base_model(input_id, use_cache=True, past_key_values=past_key_values)
             input_ids = torch.cat([input_ids, input_id], dim=-1)
-            new_token+=1
+            new_token += 1
 
             if is_llama3:
                 if stop_token_id in input_ids[0, input_len:].tolist():
@@ -449,20 +397,18 @@ class EaModel(nn.Module):
     ):
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        max_length=max_length-self.ea_layer.total_tokens-10
+
 
         if temperature > 1e-5:
             logits_processor = prepare_logits_processor(temperature=temperature, top_p=top_p, top_k=top_k)
         else:
             logits_processor = None
-        #assert input_ids.shape[0] == 1, "Only support batch size 1 for now!!"
+        # assert input_ids.shape[0] == 1, "Only support batch size 1 for now!!"
         # Avoid modifying the input_ids in-place
 
-        padding=(torch.zeros(1,1,dtype=torch.long)-1).to(input_ids.device)
+        padding = (torch.zeros(1, 1, dtype=torch.long) - 1).to(input_ids.device)
         input_ids = input_ids.clone()
         self.ea_layer.reset_kv()
-
-
 
         # Initialize the past key and value states
         if hasattr(self, "past_key_values"):
@@ -476,24 +422,24 @@ class EaModel(nn.Module):
                 past_key_values,
                 past_key_values_data,
                 current_length_data,
-            ) = initialize_past_key_values(self.base_model)
+            ) = initialize_past_key_values(self.base_model,max_length=max_length)
             self.past_key_values = past_key_values
             self.past_key_values_data = past_key_values_data
             self.current_length_data = current_length_data
 
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
-        draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
+        draft_tokens, retrieve_indices, tree_mask, tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
             input_ids, self, past_key_values, logits_processor
         )
         new_token = 0
-
+        max_length = max_length - self.ea_layer.total_tokens - 10
         for idx in range(max_length):
-            #with Timer("all"):
+            # with Timer("all"):
             self.base_model.model.tree_mask = tree_mask
 
-            draft_tokens=draft_tokens.to(input_ids.device)
-            #with Timer("tree_decoding"):
+            draft_tokens = draft_tokens.to(input_ids.device)
+            # with Timer("tree_decoding"):
             logits, hidden_state_new, outputs = tree_decoding(
                 self,
                 draft_tokens,
@@ -502,15 +448,16 @@ class EaModel(nn.Module):
                 input_ids,
                 retrieve_indices,
             )
-            #retrieve_indices=tree_buffers["retrieve_indices"]
-            #logits = logits[0, retrieve_indices]
-            draft_tokens=torch.cat((draft_tokens,padding),dim=1)
-            candidates=draft_tokens[0,retrieve_indices]
+            # retrieve_indices=tree_buffers["retrieve_indices"]
+            # logits = logits[0, retrieve_indices]
+            draft_tokens = torch.cat((draft_tokens, padding), dim=1)
+            candidates = draft_tokens[0, retrieve_indices]
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
-            #with Timer("update_inference_inputs"):
-            input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token = update_inference_inputs(
+            # print(accept_length)
+            # with Timer("update_inference_inputs"):
+            input_ids, draft_tokens, retrieve_indices, tree_mask, tree_position_ids, new_token, hidden_state, sample_token = update_inference_inputs(
                 input_ids,
                 candidates,
                 best_candidate,
@@ -538,7 +485,6 @@ class EaModel(nn.Module):
             if input_ids.shape[1] > max_length:
                 break
 
-
     @torch.no_grad()
     def naive_generate(
             self,
@@ -554,7 +500,7 @@ class EaModel(nn.Module):
     ):
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        max_length = max_length - self.ea_layer.total_tokens - 10
+
 
         if temperature > 1e-5:
             logits_processor = prepare_logits_processor(temperature=temperature, top_p=top_p, top_k=top_k)
@@ -579,7 +525,7 @@ class EaModel(nn.Module):
                 past_key_values,
                 past_key_values_data,
                 current_length_data,
-            ) = initialize_past_key_values(self.base_model)
+            ) = initialize_past_key_values(self.base_model,max_length=max_length)
             self.past_key_values = past_key_values
             self.past_key_values_data = past_key_values_data
             self.current_length_data = current_length_data
@@ -588,8 +534,7 @@ class EaModel(nn.Module):
         reset_tree_mode(self)
         outputs = self.base_model(input_ids, past_key_values=past_key_values, use_cache=True)
         new_token = 0
-
-
+        max_length = max_length - self.ea_layer.total_tokens - 10
         for idx in range(max_length):
             if logits_processor is not None:
                 logits = outputs.logits[:, -1]
@@ -605,8 +550,6 @@ class EaModel(nn.Module):
 
             yield input_ids
 
-
-
             if is_llama3:
                 if stop_token_id in input_ids[0, input_len:].tolist():
                     break
@@ -617,36 +560,3 @@ class EaModel(nn.Module):
                 break
             if input_ids.shape[1] > max_length:
                 break
-            
-    def get_image_features(
-            self, pixel_values: torch.FloatTensor):
-            """
-            Obtains image last hidden states from the vision tower and apply multimodal projection.
-
-            Args:
-                pixel_values (`torch.FloatTensor]` of shape `(batch_size, channels, height, width)`)
-                   The tensors corresponding to the input images.
-                vision_feature_layer (`int`):
-                    The index of the layer to select the vision feature.
-                vision_feature_select_strategy (`str`):
-                    The feature selection strategy used to select the vision feature from the vision backbone.
-                    Can be one of `"default"` or `"full"`
-            Returns:
-                image_features (`torch.Tensor`): Image feature tensor of shape `(num_images, image_length, embed_dim)`).
-            """
-            vision_feature_layer = self.base_model.config.vision_feature_layer
-            vision_feature_select_strategy = self.base_model.config.vision_feature_select_strategy
-            image_outputs = self.base_model.vision_tower(pixel_values, output_hidden_states=True)
-            # this is not memory efficient at all (output_hidden_states=True) will save all the hidden stated.
-            selected_image_feature = image_outputs.hidden_states[vision_feature_layer]
-            if vision_feature_select_strategy == "default":
-                selected_image_feature = selected_image_feature[:, 1:]
-            elif vision_feature_select_strategy == "full":
-                selected_image_feature = selected_image_feature
-            else:
-                raise ValueError(f"Unexpected select feature strategy: {self.config.vision_feature_select_strategy}")
-            image_features = self.base_model.multi_modal_projector(selected_image_feature)
-            
-            return image_features
-
-

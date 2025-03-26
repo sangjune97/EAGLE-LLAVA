@@ -21,7 +21,7 @@ from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
 bigname="llava-hf/llava-1.5-7b-hf"
-#bigname="lmsys/vicuna-13b-v1.5"
+#bigname="lmsys/vicuna-7b-v1.5"
         
 def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
     mask = input_ids != img_tok_index
@@ -181,7 +181,7 @@ bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokeniz
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
-
+head = bigmodel.language_model.lm_head
 bigmodel.eval()
 
 
@@ -201,8 +201,18 @@ def ge(data):
     loss_mask=data["loss_mask"]
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
     image_features = outs_big.image_hidden_states
-    hidden_state_big = outs_big.hidden_states[-1]
-    td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu()[0],"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()[0]}
+    hidden_states_list = []
+    num_layers = len(outs_big.hidden_states)-1
+    
+    for idx, hidden_state in enumerate(outs_big.hidden_states):
+        if idx == num_layers - 3 or idx == num_layers // 2 or idx == 2 :
+            hidden_states_list.append(hidden_state)
+    hidden_states = torch.cat(hidden_states_list, dim=-1)
+    
+    last_hidden_state = outs_big.hidden_states[-1]
+    
+    
+    td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_states":hidden_states.cpu()[0], "last_hidden_state":last_hidden_state.cpu()[0], "loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()[0]}
     return td
 
 outdir = f'{args.outdir}/{args.index}'

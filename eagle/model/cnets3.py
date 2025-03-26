@@ -483,18 +483,18 @@ class Model(nn.Module):
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        #self.lm_head=nn.Linear(config.hidden_size,config.draft_vocab_size,bias=False)
+        self.lm_head=nn.Linear(config.hidden_size,config.draft_vocab_size,bias=False)
         if load_emb and not hasattr(config, "target_hidden_size"):
             from safetensors import safe_open
             import json
             try:
                 with open(os.path.join(path, "model.safetensors.index.json"), "r") as f:
                     index_json = json.loads(f.read())
-                    emb_path = index_json["weight_map"]["language_model.model.embed_tokens.weight"]
+                    emb_path = index_json["weight_map"]["model.embed_tokens.weight"]
                 with safe_open(os.path.join(path, emb_path),
                                framework="pt",
                                device="cpu") as f:
-                    tensor_slice = f.get_slice("language_model.model.embed_tokens.weight")
+                    tensor_slice = f.get_slice("model.embed_tokens.weight")
                     vocab_size, hidden_dim = tensor_slice.get_shape()
                     tensor = tensor_slice[:, :hidden_dim].float()
             except:
@@ -519,7 +519,7 @@ class Model(nn.Module):
             self.fc = nn.Linear(config.target_hidden_size * 3, self.hidden_size, bias=False)
         else:
             self.fc = nn.Linear(config.hidden_size * 3, self.hidden_size, bias=False)
-        #self.norm=LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm=LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.logsoftmax = nn.LogSoftmax(dim=-1)
 
         d2t=torch.zeros((config.draft_vocab_size),dtype=torch.long)
@@ -529,25 +529,6 @@ class Model(nn.Module):
 
         for param in self.embed_tokens.parameters():
             param.requires_grad = False
-            
-    @classmethod
-    def from_pretrained(cls, config, path):
-        from huggingface_hub import hf_hub_download
-        model = cls(config)
-        try:
-            load_model_path=os.path.join(path, "pytorch_model.bin")
-            if not os.path.exists(load_model_path):
-                load_model_path=hf_hub_download(path, "pytorch_model.bin")
-            ea_layer_state_dict = torch.load(load_model_path)
-        except:
-            from safetensors.torch import load_file
-            load_model_path = os.path.join(path, "model.safetensors")
-            if not os.path.exists(load_model_path):
-                load_model_path = hf_hub_download(path, "model.safetensors")
-            ea_layer_state_dict = load_file(load_model_path)
-        model.load_state_dict(ea_layer_state_dict,strict=False)
-        return model
-    
     def init_tree(self):
         self.tree_mask_init = torch.eye(self.top_k, device=self.embed_tokens.weight.device)[None, None]
         self.position_ids = torch.zeros(self.top_k, device=self.embed_tokens.weight.device, dtype=torch.long)
@@ -587,39 +568,6 @@ class Model(nn.Module):
                 ] = torch.finfo(torch.float32).min
 
         return combined_attention_mask
-    
-    def pool_tensor(self, input_tensor):
-        # 입력 텐서의 형태를 [1, 24, 24, 4096]으로 변경
-        reshaped_tensor = input_tensor.reshape(24, 24, 4096)
-
-        # 차원을 (배치 크기, 채널, 높이, 너비)로 변환
-        corrected_tensor = reshaped_tensor.permute(2, 0 ,1)  # 이제 (1, 4096, 24, 24) 형태
-
-        # 최대 풀링 적용
-        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
-
-        # pooled_tensor를 [1, 144, 4096]으로 다시 변환
-        reshaped_back_tensor = pooled_tensor.reshape(144, 4096)
-
-        return reshaped_back_tensor
-    
-    def find_sequence_boundaries(self, tensor, value=32000):
-        # 텐서를 1D로 변환 (필요시)
-        tensor = tensor.flatten()
-
-        # 지정 값이 시작하고 끝나는 지점 찾기
-        is_value = tensor == value
-        shifted_right = torch.cat((torch.tensor([False]), is_value[:-1]))
-        shifted_left = torch.cat((is_value[1:], torch.tensor([False])))
-
-        # 시작점: 현재는 True이고, 이전은 False인 위치
-        start_indices = (is_value & ~shifted_right).nonzero(as_tuple=True)[0]
-        # 종료점: 현재는 True이고, 다음은 False인 위치
-        end_indices = (is_value & ~shifted_left).nonzero(as_tuple=True)[0] + 1
-        
-
-        return start_indices, end_indices
-
 
     def forward(
             self,
@@ -633,34 +581,20 @@ class Model(nn.Module):
             output_attentions: Optional[bool] = None,
             output_hidden_states: Optional[bool] = None,
             return_dict: Optional[bool] = None,
-            std=None,
-            image_features: Optional[torch.FloatTensor] = None,
+            std=None
     ):
-        with torch.no_grad():
-            inputs_embeds = self.embed_tokens(input_ids)
-            
-            if image_features is not None:
-                n_image_tokens = (input_ids == 32000).sum(dim=-1)[0].item()
-                n_image_features = image_features.shape[1]
-                if n_image_tokens != n_image_features:
-                    image_features = None
-                    #raise ValueError(
-                    #    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                    #)
-                else :
-                    special_image_mask = (
-                        (input_ids == 32000)
-                        .unsqueeze(-1)
-                        .expand_as(inputs_embeds)
-                        .to(inputs_embeds.device)
-                    )
-                    image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
-                    inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
         batch_size, seq_length, _ = hidden_states.shape
         seq_length_with_past = seq_length
         past_key_values_length = 0
 
-        
+        with torch.no_grad():
+            inputs_embeds = self.embed_tokens(input_ids)
+            # inputs_embeds = inputs_embeds.detach()
+
+        # if std is not None:
+        #     noise = torch.randn(inputs_embeds.size(),device=inputs_embeds.device) * std
+        #     inputs_embeds=inputs_embeds+noise
+
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
@@ -719,10 +653,9 @@ class Model(nn.Module):
         self.stable_kv = None
 
     @torch.no_grad()
-    def topK_genrate(self, hidden_states, input_ids, head, logits_processor, image_features=None):
-        
+    def topK_genrate(self, hidden_states, input_ids, head, logits_processor):
+
         input_ids = input_ids.to(hidden_states.device)
-        image_features = image_features
         total_tokens = self.total_tokens
         depth = self.depth
         top_k = self.top_k
@@ -745,12 +678,12 @@ class Model(nn.Module):
             out_hidden, past_key_values = self(hidden_states, input_ids=input_ids[:, kv_len:],
                                                past_key_values=self.stable_kv, use_cache=True)
         else:
-            out_hidden, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True,image_features=image_features)
+            out_hidden, past_key_values = self(hidden_states, input_ids=input_ids, use_cache=True)
         self.stable_kv = past_key_values
         last_hidden = out_hidden[:, -1]
 
-        last_headout = head(last_hidden)
-        #last_headout = self.lm_head(self.norm(last_hidden))
+        # last_headout = head(last_hidden)
+        last_headout = self.lm_head(self.norm(last_hidden))
 
         last_p = self.logsoftmax(last_headout)
         top = torch.topk(last_p, top_k, dim=-1)
@@ -784,8 +717,7 @@ class Model(nn.Module):
             parents = (topk_cs_index + bias)
             parents_list.append(parents)
 
-            #last_headout = self.lm_head(self.norm(out_hidden[0]))
-            last_headout = head(out_hidden[0])
+            last_headout = self.lm_head(self.norm(out_hidden[0]))
             last_p = self.logsoftmax(last_headout)
 
             top = torch.topk(last_p, top_k, dim=-1)
