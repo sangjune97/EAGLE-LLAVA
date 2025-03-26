@@ -20,7 +20,7 @@ import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-bigname="llava-hf/llava-1.5-7b-hf"
+bigname="llava-hf/llava-1.5-13b-hf"
 #bigname="lmsys/vicuna-13b-v1.5"
         
 def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
@@ -35,20 +35,21 @@ def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
 
 def pool_24x24_to_12x12(
     img_block_states: torch.Tensor,
-    pool_type: str = "max"
+    pool_type: str = "mean"
 ) -> torch.Tensor:
     """
-    img_block_states: shape [576, 4096] (24*24=576, hidden_dim=4096)
-    -> (24,24,4096)로 보고 2D 풀링(kernel=2) -> (12,12,4096) -> 최종 (144,4096).
+    img_block_states: shape [576, hidden_dim]
+    -> (24,24,hidden_dim)로 보고 2D 풀링(kernel=2) -> (12,12,hidden_dim) -> 최종 (144, hidden_dim).
 
     pool_type: "max" 또는 "mean"
       - "max"  -> F.max_pool2d
       - "mean" -> F.avg_pool2d
     """
-    # (576, 4096) -> (24,24,4096)
-    reshaped_3d = img_block_states.view(24, 24, 4096)
+    hidden_dim = img_block_states.shape[1]  # 가변적인 hidden_dim 추출
+    # (576, hidden_dim) -> (24,24,hidden_dim)
+    reshaped_3d = img_block_states.view(24, 24, hidden_dim)
     
-    # 2D 풀링을 위해 NCHW 형식으로 바꾸기: [N=1, C=4096, H=24, W=24]
+    # (1, hidden_dim, 24, 24) for pooling
     reshaped_4d = reshaped_3d.permute(2, 0, 1).unsqueeze(0)
     # shape: [1, 4096, 24, 24]
 
@@ -67,21 +68,40 @@ def pool_24x24_to_12x12(
     # shape: (12,12,4096)
 
     # Flatten -> (144, 4096)
-    flattened_2d = pooled_3d.view(-1, 4096)
+    flattened_2d = pooled_3d.view(-1, hidden_dim)
     return flattened_2d
 
-def pool_tensor(input_tensor):
-    # 입력 텐서의 형태를 [1, 24, 24, 4096]으로 변경
-    reshaped_tensor = input_tensor.reshape(1, 24, 24, 4096)
+def pool_tensor(input_tensor, pool_type="mean"):
+    """
+    input_tensor: shape [1, 576, hidden_dim]
+    -> (24,24,hidden_dim)으로 보고 pooling → (12,12,hidden_dim) → (1, 144, hidden_dim)
 
-    # 차원을 (배치 크기, 채널, 높이, 너비)로 변환
-    corrected_tensor = reshaped_tensor.permute(0, 3, 1, 2)  # 이제 (1, 4096, 24, 24) 형태
+    pool_type: "max" 또는 "mean"
+    """
+    # 배치 차원 제거 (batch=1일 때만)
+    if input_tensor.dim() == 3 and input_tensor.shape[0] == 1:
+        input_tensor = input_tensor.squeeze(0)  # (576, hidden_dim)
+    else:
+        raise ValueError("input_tensor는 shape [1, 576, hidden_dim] 형태여야 함.")
 
-    # 최대 풀링 적용
-    pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
+    hidden_dim = input_tensor.shape[1]
 
-    # pooled_tensor를 [1, 144, 4096]으로 다시 변환
-    reshaped_back_tensor = pooled_tensor.reshape(1, 144, 4096)
+    # [576, hidden_dim] → [1, 24, 24, hidden_dim]
+    reshaped_tensor = input_tensor.view(1, 24, 24, hidden_dim)
+
+    # → [1, hidden_dim, 24, 24]
+    corrected_tensor = reshaped_tensor.permute(0, 3, 1, 2)
+
+    # 풀링 적용
+    if pool_type == "max":
+        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
+    elif pool_type == "mean":
+        pooled_tensor = F.avg_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
+    else:
+        raise ValueError(f"Unsupported pool_type: {pool_type}. Use 'max' or 'mean'.")
+
+    # → [1, 144, hidden_dim]
+    reshaped_back_tensor = pooled_tensor.permute(0, 2, 3, 1).reshape(1, -1, hidden_dim)
 
     return reshaped_back_tensor
 
@@ -89,9 +109,9 @@ def pool_image_token(
     input_ids: torch.Tensor,
     loss_mask: torch.Tensor,
     hidden_states: torch.Tensor,
-    img_tok_index: int = 3200,
+    img_tok_index: int = 32000,
     img_token_loss: int = 0,
-    pool_type: str = "max"
+    pool_type: str = "mean"
 ):
     """
     원본 시퀀스( batch=1 )에서
@@ -185,7 +205,7 @@ def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
+    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
     image_folder = '/data/COCO/train2017'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
@@ -323,7 +343,7 @@ def build_dataset_rank(
     # dst.set_format(type="torch")
     return ds1
 
-bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
+bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf').tokenizer
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
@@ -356,7 +376,7 @@ def ge(data):
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
     hidden_state_big = outs_big.hidden_states[-1]
     filtered_input_ids, filtered_loss_mask, filtered_hidden_states = pool_image_token(input_ids, loss_mask, hidden_state_big, 32000,0,"mean")
-    image_features = pool_tensor(outs_big.image_hidden_states)
+    image_features = pool_tensor(outs_big.image_hidden_states, "mean")
     
     td={"input_ids":filtered_input_ids.cpu()[0],"image":data["image"],"hidden_state":filtered_hidden_states.cpu()[0],"loss_mask":filtered_loss_mask.cpu()[0],"image_features":image_features.cpu()[0]}
     return td
