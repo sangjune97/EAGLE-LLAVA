@@ -68,10 +68,12 @@ def build_dataset_rank(
         select=None,
 ):
     processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
-    image_folder = '/data/COCO/train2017'
+    #image_folder = '/data/COCO/train2017'
+    image_folder = '/data'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
-    ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
+    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
+    ds = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")
     ds = ds['train']
     ds = ds.shuffle(seed=42)
     ds1 = ds.select(range(args.start, args.end))
@@ -202,8 +204,7 @@ def ge(data):
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
     image_features = outs_big.image_hidden_states
     hidden_state_big = outs_big.hidden_states[-1]
-    #colorize_text(input_ids.cpu()[0], loss_mask.cpu()[0], bigtokenizer)
-    #input()
+
     td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu()[0],"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()[0]}
     return td
 
