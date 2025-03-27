@@ -619,6 +619,7 @@ class Model(nn.Module):
             std=None,
             image_features: Optional[torch.FloatTensor] = None,
     ):
+        
         with torch.no_grad():
             inputs_embeds = self.embed_tokens(input_ids)
             if image_features is not None:
@@ -630,6 +631,7 @@ class Model(nn.Module):
                     #    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
                     #)
                 else :
+                    
                     special_image_mask = (
                         (input_ids == 32000)
                         .unsqueeze(-1)

@@ -55,9 +55,9 @@ def pool_24x24_to_12x12(
 
     # 2D 풀링 (kernel_size=2)
     if pool_type == "max":
-        pooled_4d = F.max_pool2d(reshaped_4d, kernel_size=2)
+        pooled_4d = F.max_pool2d(reshaped_4d, kernel_size=4)
     elif pool_type == "mean":
-        pooled_4d = F.avg_pool2d(reshaped_4d, kernel_size=2)
+        pooled_4d = F.avg_pool2d(reshaped_4d, kernel_size=4)
     else:
         raise ValueError(f"Unsupported pool_type: {pool_type}. Use 'max' or 'mean'.")
 
@@ -94,9 +94,9 @@ def pool_tensor(input_tensor, pool_type="mean"):
 
     # 풀링 적용
     if pool_type == "max":
-        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
+        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=4)
     elif pool_type == "mean":
-        pooled_tensor = F.avg_pool2d(corrected_tensor, kernel_size=2, stride=2, padding=0)
+        pooled_tensor = F.avg_pool2d(corrected_tensor, kernel_size=4)
     else:
         raise ValueError(f"Unsupported pool_type: {pool_type}. Use 'max' or 'mean'.")
 
@@ -373,12 +373,20 @@ def ge(data):
     input_ids=data["input_ids"]
     pixel_values=data["pixel_values"]
     loss_mask=data["loss_mask"]
-    outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
+    outs_big = bigmodel(input_ids.to(bigmodel.device), pixel_values.to(bigmodel.device), output_hidden_states=True)
     hidden_state_big = outs_big.hidden_states[-1]
     filtered_input_ids, filtered_loss_mask, filtered_hidden_states = pool_image_token(input_ids, loss_mask, hidden_state_big, 32000,0,"mean")
     image_features = pool_tensor(outs_big.image_hidden_states, "mean")
     
+    del outs_big
+    torch.cuda.empty_cache()
+    
     td={"input_ids":filtered_input_ids.cpu()[0],"image":data["image"],"hidden_state":filtered_hidden_states.cpu()[0],"loss_mask":filtered_loss_mask.cpu()[0],"image_features":image_features.cpu()[0]}
+    
+    # ✅ 큰 텐서 정리 후 캐시 비우기
+    del hidden_state_big, filtered_hidden_states, image_features
+    torch.cuda.empty_cache()
+    
     return td
 
 outdir = f'{args.outdir}/{args.index}'
