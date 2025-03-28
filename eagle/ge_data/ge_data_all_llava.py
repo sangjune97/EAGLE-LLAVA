@@ -1,4 +1,5 @@
 import argparse
+import gc
 import copy
 
 parser = argparse.ArgumentParser(description='sp')
@@ -20,8 +21,8 @@ import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-bigname="llava-hf/llava-1.5-13b-hf"
-#bigname="lmsys/vicuna-13b-v1.5"
+bigname="llava-hf/llava-1.5-7b-hf"
+#bigname="lmsys/vicuna-7b-v1.5"
         
 def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
     mask = input_ids != img_tok_index
@@ -67,11 +68,14 @@ def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
-    image_folder = '/data/COCO/train2017'
+    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
+    #image_folder = '/data/COCO/train2017'
+    image_folder = '/data'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
-    ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
+    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
+    ds = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")
+    
     ds = ds['train']
     ds = ds.shuffle(seed=42)
     ds1 = ds.select(range(args.start, args.end))
@@ -177,7 +181,7 @@ def build_dataset_rank(
     # dst.set_format(type="torch")
     return ds1
 
-bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf').tokenizer
+bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
@@ -200,8 +204,17 @@ def ge(data):
     pixel_values=data["pixel_values"]
     loss_mask=data["loss_mask"]
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True)
-    image_features = outs_big.image_hidden_states
-    hidden_state_big = outs_big.hidden_states[-1]
+    
+    image_features = outs_big.image_hidden_states.cpu()
+    hidden_state_big = outs_big.hidden_states[-1].cpu()
+    
+    # GPU 텐서는 여기서 더 안 쓸 거면 즉시 지워서 참조 해제
+    del outs_big
+    # 캐시 정리 (가비지 컬렉션 + CUDA 캐시 해제)
+    gc.collect()
+    torch.cuda.empty_cache()
+    
+    
     #colorize_text(input_ids.cpu()[0], loss_mask.cpu()[0], bigtokenizer)
     #input()
     td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu()[0],"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()[0]}
@@ -220,7 +233,13 @@ def writedata(name,data_point):
 
 
 for data in tqdm(ds):
-    outdata = ge(data)
-    writedata(outdir,outdata)
+    # no_grad로 불필요한 그래디언트 계산 방지
+    with torch.no_grad():
+        outdata = ge(data)
 
+    writedata(outdir, outdata)
 
+    # outdata를 파일로 저장한 뒤 더는 메모리에 남길 필요가 없으면 지워줌
+    del outdata
+    gc.collect()
+    torch.cuda.empty_cache()

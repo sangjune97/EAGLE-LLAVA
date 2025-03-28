@@ -1,7 +1,7 @@
 import argparse
 
 parser = argparse.ArgumentParser(description='sp')
-parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/8c85e9a4d626b7b908448be32c1ba5ad79b95e76')
+parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
 parser.add_argument('--configpath', type=str, default="config.json")
 parser.add_argument('--pretrainedpath', type=str, default='yuhuili/EAGLE-Vicuna-7B-v1.3')
 parser.add_argument('--lr', type=float, default=3e-5)

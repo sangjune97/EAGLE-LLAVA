@@ -2,7 +2,7 @@ import argparse
 import copy
 
 parser = argparse.ArgumentParser(description='sp')
-parser.add_argument('--outdir', type=str, default='0')
+parser.add_argument('--outdir', type=str, default='/data/sangjun')
 args = parser.parse_args()
 
 import os
