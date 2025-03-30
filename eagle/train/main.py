@@ -1,4 +1,6 @@
 import argparse
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, message="TypedStorage is deprecated")
 
 parser = argparse.ArgumentParser(description='sp')
 parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')

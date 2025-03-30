@@ -1,7 +1,8 @@
 import argparse
-
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 parser = argparse.ArgumentParser(description='sp')
-parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/8c85e9a4d626b7b908448be32c1ba5ad79b95e76')
+parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
 parser.add_argument('--configpath', type=str, default="config.json")
 parser.add_argument('--pretrainedpath', type=str, default='yuhuili/EAGLE-Vicuna-7B-v1.3')
 parser.add_argument('--lr', type=float, default=3e-5)
@@ -21,7 +22,7 @@ train_config = {
     "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
     "num_warmup_steps": 2000,
-    "total_steps": 1600000,
+    "total_steps": 800000,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
@@ -142,7 +143,7 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, index):
         # try:
-        data = torch.load(self.data[index])
+        data = torch.load(self.data[index],weights_only=True)
         new_data = {}
         hidden_state = data['hidden_state'][:train_config["max_len"]][None, :]
         input_ids = data['input_ids'][:train_config["max_len"]][None, :]
@@ -151,8 +152,8 @@ class CustomDataset(Dataset):
 
 
         length = hidden_state.shape[1]
-        # length_q = data['query_ids'].shape[1]
         attention_mask = [1] * length
+        # length_q = data['query_ids'].shape[1]
         loss_mask = loss_mask[0].tolist()
         loss_mask[-1] = 0
 

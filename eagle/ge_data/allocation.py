@@ -14,7 +14,7 @@ e = 50000 -1
 gpus = [[0],[1],[2],[3],[4],[5],[6],[7]]
 
 num_p = len(gpus)
-outdir = '{}/llava_{}_{}_mufp16'.format(args.outdir,s,e)
+outdir = '{}/llava_{}_{}_mufp16_remove'.format(args.outdir,s,e)
 
 
 def split_range(start, end, n, over=False):
@@ -54,7 +54,7 @@ for i in range(num_p):
     gpu_index = gpus[i]
     gpu_index_str = ' '.join(map(str, gpu_index))
     # gpu_index_str='['+gpu_index_str+']'
-    command = "python ge_data_all_llava.py --start={} --end={} --index={} --gpu_index {} --outdir {}".format(start, end, index,
+    command = "python ge_data_all_llava_remove.py --start={} --end={} --index={} --gpu_index {} --outdir {}".format(start, end, index,
                                                                                                 gpu_index_str, outdir)
     commands.append(command)
 # run_command(commands[0])
