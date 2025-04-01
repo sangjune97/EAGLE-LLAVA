@@ -20,8 +20,8 @@ import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-bigname="llava-hf/llava-1.5-13b-hf"
-#bigname="lmsys/vicuna-13b-v1.5"
+bigname="llava-hf/llava-1.5-7b-hf"
+#bigname="lmsys/vicuna-7b-v1.5"
         
 def remove_image_token(input_ids, img_tok_index, loss_mask, hidden_states=None):
     mask = input_ids != img_tok_index
@@ -55,9 +55,9 @@ def pool_24x24_to_12x12(
 
     # 2D 풀링 (kernel_size=2)
     if pool_type == "max":
-        pooled_4d = F.max_pool2d(reshaped_4d, kernel_size=4)
+        pooled_4d = F.max_pool2d(reshaped_4d, kernel_size=2)
     elif pool_type == "mean":
-        pooled_4d = F.avg_pool2d(reshaped_4d, kernel_size=4)
+        pooled_4d = F.avg_pool2d(reshaped_4d, kernel_size=2)
     else:
         raise ValueError(f"Unsupported pool_type: {pool_type}. Use 'max' or 'mean'.")
 
@@ -94,9 +94,9 @@ def pool_tensor(input_tensor, pool_type="mean"):
 
     # 풀링 적용
     if pool_type == "max":
-        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=4)
+        pooled_tensor = F.max_pool2d(corrected_tensor, kernel_size=2)
     elif pool_type == "mean":
-        pooled_tensor = F.avg_pool2d(corrected_tensor, kernel_size=4)
+        pooled_tensor = F.avg_pool2d(corrected_tensor, kernel_size=2)
     else:
         raise ValueError(f"Unsupported pool_type: {pool_type}. Use 'max' or 'mean'.")
 
@@ -114,76 +114,57 @@ def pool_image_token(
     pool_type: str = "mean"
 ):
     """
-    원본 시퀀스( batch=1 )에서
-    - 연속된 이미지 토큰(img_tok_index) 구간을 추출,
-    - (block_size, hidden_dim) -> 2D 풀링 -> (144, hidden_dim) 변환,
-    - 변환된 144개를 시퀀스에 그대로 삽입.
-
-    Args:
-        input_ids: (1, seq_len)
-        loss_mask: (1, seq_len)
-        hidden_states: (1, seq_len, hidden_dim)
-        img_tok_index: 이미지 토큰 ID (기본=3200)
-        img_token_loss: 풀링 후 삽입되는 새 토큰들의 loss_mask 값(1 또는 0)
-        pool_type: "max" or "mean" (2D 풀링 방식)
-
-    Returns:
-        new_input_ids: (1, new_seq_len)
-        new_loss_mask: (1, new_seq_len)
-        new_hidden_states: (1, new_seq_len, hidden_dim)
+    이미지 토큰 시퀀스를 찾아서 풀링 후 요약, 시퀀스에 재삽입.
+    풀링 결과 크기에 자동 대응하도록 유연화함.
     """
     device = input_ids.device
 
-    assert input_ids.dim() == 2 and input_ids.size(0) == 1, "batch_size=1 가정"
-    assert hidden_states.dim() == 3 and hidden_states.size(0) == 1, "batch_size=1 가정"
+    assert input_ids.dim() == 2 and input_ids.size(0) == 1
+    assert hidden_states.dim() == 3 and hidden_states.size(0) == 1
 
-    orig_ids = input_ids[0]       # shape: (seq_len,)
-    orig_loss = loss_mask[0]      # shape: (seq_len,)
-    orig_hid = hidden_states[0]   # shape: (seq_len, hidden_dim)
+    orig_ids = input_ids[0]
+    orig_loss = loss_mask[0]
+    orig_hid = hidden_states[0]
 
-    new_ids_list = []
-    new_loss_list = []
-    new_hid_list = []
+    chunks_ids = []
+    chunks_loss = []
+    chunks_hid = []
 
     seq_len = orig_ids.size(0)
     i = 0
     while i < seq_len:
         if orig_ids[i] == img_tok_index:
-            # 연속된 이미지 토큰 구간 찾기
+            # 연속된 이미지 토큰 구간 탐색
             start = i
             while i < seq_len and orig_ids[i] == img_tok_index:
                 i += 1
-            end = i  # [start, end) 구간 전부 img_tok_index
+            end = i
 
-            # 이미지 토큰 구간 히든 스테이트: shape=(block_size, hidden_dim)
-            img_block_states = orig_hid[start:end]
+            # 히든스테이트 추출
+            img_block_states = orig_hid[start+1:end+1]  # shape: (N, hidden_dim)
 
-            # 2D 풀링 -> (144, hidden_dim)
-            pooled_2d = pool_24x24_to_12x12(img_block_states, pool_type=pool_type)
-            # shape: [144, 4096] (가정)
+            # 풀링 (자동으로 크기 맞춤)
+            pooled = pool_24x24_to_12x12(img_block_states, pool_type=pool_type)  # shape: (M, hidden_dim)
+            num_tokens = pooled.size(0)
 
-            # 새 시퀀스에 144개 토큰 삽입
-            # - 각 행 = 1개의 토큰
-            # - 토큰ID = img_tok_index
-            # - loss_mask = img_token_loss
-            num_tokens = pooled_2d.size(0)  # 144
-            for row_idx in range(num_tokens):
-                new_ids_list.append(torch.tensor([img_tok_index], device=device))
-                new_loss_list.append(torch.tensor([img_token_loss], device=device))
-                row_vec = pooled_2d[row_idx].unsqueeze(0)  # (1, hidden_dim)
-                new_hid_list.append(row_vec)
+            # 자동 크기로 토큰 ID 및 loss mask 생성
+            pooled_ids = torch.full((num_tokens,), img_tok_index, dtype=torch.long, device=device)
+            pooled_loss = torch.full((num_tokens,), img_token_loss, dtype=torch.long, device=device)
+
+            chunks_ids.append(pooled_ids)
+            chunks_loss.append(pooled_loss)
+            chunks_hid.append(pooled)
 
         else:
-            # 이미지 토큰이 아니면 그대로
-            new_ids_list.append(orig_ids[i].unsqueeze(0))   
-            new_loss_list.append(orig_loss[i].unsqueeze(0))
-            new_hid_list.append(orig_hid[i].unsqueeze(0))
+            chunks_ids.append(orig_ids[i].unsqueeze(0))
+            chunks_loss.append(orig_loss[i].unsqueeze(0))
+            chunks_hid.append(orig_hid[i].unsqueeze(0))
             i += 1
 
-    # 리스트 -> 최종 텐서
-    new_input_ids = torch.cat(new_ids_list, dim=0).unsqueeze(0)      # (1, new_seq_len)
-    new_loss_mask = torch.cat(new_loss_list, dim=0).unsqueeze(0)     # (1, new_seq_len)
-    new_hidden_states = torch.cat(new_hid_list, dim=0).unsqueeze(0)  # (1, new_seq_len, hidden_dim)
+    # 최종 텐서로 병합
+    new_input_ids = torch.cat(chunks_ids).unsqueeze(0)       # (1, new_seq_len)
+    new_loss_mask = torch.cat(chunks_loss).unsqueeze(0)      # (1, new_seq_len)
+    new_hidden_states = torch.cat(chunks_hid).unsqueeze(0)   # (1, new_seq_len, hidden_dim)
 
     return new_input_ids, new_loss_mask, new_hidden_states
 
@@ -205,11 +186,13 @@ def build_dataset_rank(
         tokenizer, split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf')
-    image_folder = '/data/COCO/train2017'
+    processor = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf')
+    #image_folder = '/data/COCO/train2017'
+    image_folder = '/data'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
-    ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
+    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
+    ds = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")
     ds = ds['train']
     ds = ds.shuffle(seed=42)
     ds1 = ds.select(range(args.start, args.end))
@@ -343,7 +326,7 @@ def build_dataset_rank(
     # dst.set_format(type="torch")
     return ds1
 
-bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-13b-hf').tokenizer
+bigtokenizer = AutoProcessor.from_pretrained('llava-hf/llava-1.5-7b-hf').tokenizer
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="auto",torch_dtype=torch.float16)
@@ -382,7 +365,6 @@ def ge(data):
     torch.cuda.empty_cache()
     
     td={"input_ids":filtered_input_ids.cpu()[0],"image":data["image"],"hidden_state":filtered_hidden_states.cpu()[0],"loss_mask":filtered_loss_mask.cpu()[0],"image_features":image_features.cpu()[0]}
-    
     # ✅ 큰 텐서 정리 후 캐시 비우기
     del hidden_state_big, filtered_hidden_states, image_features
     torch.cuda.empty_cache()

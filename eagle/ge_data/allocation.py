@@ -1,6 +1,7 @@
 import argparse
 import copy
-
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 parser = argparse.ArgumentParser(description='sp')
 parser.add_argument('--outdir', type=str, default='/data/sangjun')
 args = parser.parse_args()
@@ -9,7 +10,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 s = 0
-e = 100000 -1
+e = 50000 -1
 #e = 68 - 1
 gpus = [[0],[1],[2],[3],[4],[5],[6],[7]]
 
@@ -54,7 +55,7 @@ for i in range(num_p):
     gpu_index = gpus[i]
     gpu_index_str = ' '.join(map(str, gpu_index))
     # gpu_index_str='['+gpu_index_str+']'
-    command = "python ge_data_all_llava.py --start={} --end={} --index={} --gpu_index {} --outdir {}".format(start, end, index,
+    command = "python ge_data_all_llava_pooling.py --start={} --end={} --index={} --gpu_index {} --outdir {}".format(start, end, index,
                                                                                                 gpu_index_str, outdir)
     commands.append(command)
 # run_command(commands[0])
