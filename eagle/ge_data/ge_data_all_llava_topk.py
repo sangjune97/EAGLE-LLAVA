@@ -40,24 +40,32 @@ def keep_topk_image_token(
     attentions: list of [1, heads, seq_len, seq_len]
     image_features: [1, 576, dim] or [576, dim]
     """
+    # 기준 디바이스 정하기 (input_ids가 기준)
     device = input_ids.device
 
-    input_ids = input_ids[0].to(device)       # [seq_len]
-    loss_mask = loss_mask[0].to(device)
+    # 텐서 차원 축소 및 디바이스 정렬
+    input_ids = input_ids[0].to(device)        # [seq_len]
+    loss_mask = loss_mask[0].to(device)        # [seq_len]
     hidden_states = hidden_states[0].to(device)  # [seq_len, dim]
 
-    # last_token attention score
+    # 마지막 토큰이 attend한 attention 값 추출 후 평균
     last_layer_attn = attentions[-1][0].to(device)         # [heads, seq_len, seq_len]
-    avg_attention = last_layer_attn.mean(dim=0)            # [seq_len, seq_len]
-    last_token_attention = avg_attention[-1]               # [seq_len]
+    last_token_attention = last_layer_attn[:, -1, :].mean(dim=0)  # [seq_len]
 
-    # image token indices
-    image_token_indices = (input_ids == img_tok_index).nonzero(as_tuple=True)[0].to(device)
+    # 이미지 토큰 인덱스 추출
+    image_token_indices = (input_ids == img_tok_index).nonzero(as_tuple=True)[0]
 
-    # top-k 선택
+    # 예외 처리: 이미지 토큰이 없는 경우
+    if image_token_indices.size(0) == 0:
+        return input_ids.unsqueeze(0), loss_mask.unsqueeze(0), hidden_states, image_features
+
+    # top-k 이미지 토큰 선택
     image_token_scores = last_token_attention[image_token_indices].float()
-    topk_indices_local = torch.topk(image_token_scores, topk).indices.to(device)
-    image_token_indices = image_token_indices.to(device)  # 혹시 몰라서 재확인
+    topk = min(topk, image_token_scores.size(0))
+    topk_indices_local = torch.topk(image_token_scores, topk).indices
+
+    # 디바이스 일치시켜서 인덱싱
+    image_token_indices = image_token_indices.to(topk_indices_local.device)
     topk_indices_global = image_token_indices[topk_indices_local]
 
     # 마스크 생성
@@ -66,20 +74,22 @@ def keep_topk_image_token(
     topk_img_mask[topk_indices_global] = True
     final_mask = text_mask | topk_img_mask
 
-    # 필터링
+    # 텐서 필터링
     filtered_input_ids = input_ids[final_mask].unsqueeze(0)
     filtered_loss_mask = loss_mask[final_mask].unsqueeze(0)
-    filtered_hidden_states = hidden_states[final_mask, :]
+    filtered_hidden_states = hidden_states[final_mask]
 
-    # image_features 필터링
+    # 이미지 피처 필터링 (디바이스도 정렬)
     filtered_image_features = None
     if image_features is not None:
         if image_features.dim() == 3:
             image_features = image_features[0]
-        topk_indices_local = topk_indices_local.to(image_features.device)
+        image_features = image_features.to(device)
         filtered_image_features = image_features[topk_indices_local]
 
     return filtered_input_ids, filtered_loss_mask, filtered_hidden_states, filtered_image_features
+
+
 
 def colorize_text(input_ids, loss_mask, tokenizer):
         # input_ids를 텍스트로 변환
@@ -267,6 +277,7 @@ def ge(data):
     torch.cuda.empty_cache()
     td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu(),"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()}
      # GPU 텐서는 여기서 더 안 쓸 거면 즉시 지워서 참조 해제
+    colorize_text(input_ids[0], loss_mask[0], bigtokenizer)
     del hidden_state_big
     gc.collect()
     torch.cuda.empty_cache()
