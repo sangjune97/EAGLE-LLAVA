@@ -323,6 +323,44 @@ def pool_image_token(input_ids, img_tok_index, hidden_states=None):
     
     return filtered_input_ids
 
+def keep_topk_image_token(input_ids, img_tok_index, hidden_states=None, attentions=None, topk=20):
+    """
+    input_ids: [1, seq_len]
+    hidden_states: [1, seq_len, dim]
+    attentions: list of [1, heads, seq_len, seq_len]
+    """
+    
+    input_ids = input_ids[0]  # [seq_len]
+    assert attentions is not None, "attentions를 꼭 넘겨줘야 해!"
+
+    # 마지막 레이어의 마지막 토큰 attention score 계산
+    last_layer_attn = attentions[-1][0]              # [heads, seq_len, seq_len]
+    avg_attention = last_layer_attn.mean(dim=0)      # [seq_len, seq_len]
+    last_token_attention = avg_attention[-1]         # [seq_len]
+
+    # 이미지 토큰 인덱스 추출
+    image_token_indices = (input_ids == img_tok_index).nonzero(as_tuple=True)[0]  # [N_img]
+
+    # 이미지 토큰 중 top-k 선택
+    image_token_scores = last_token_attention[image_token_indices]
+    topk_indices_local = torch.topk(image_token_scores, topk).indices
+    topk_indices_global = image_token_indices[topk_indices_local]
+
+    # 텍스트 토큰 + top-k 이미지 토큰만 유지
+    text_mask = input_ids != img_tok_index
+    topk_img_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+    topk_img_mask[topk_indices_global] = True
+    final_mask = text_mask | topk_img_mask  # [seq_len]
+
+    # input_ids 필터링
+    filtered_input_ids = input_ids[final_mask].unsqueeze(0).to(input_ids.device)
+
+    if hidden_states is not None:
+        filtered_hidden_states = hidden_states[0][final_mask, :]  # [new_seq_len, dim]
+        return filtered_input_ids, filtered_hidden_states
+
+    return filtered_input_ids
+
 def nothing_image_token(input_ids, img_tok_index, hidden_states=None):
     if hidden_states is not None:
         return input_ids, hidden_states
@@ -338,12 +376,15 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
         process_token = remove_image_token_except_last
     elif token_process == 4:
         process_token = remove_image_token_except_first
+    elif token_process == 5:
+        process_token = keep_topk_image_token
     else :
         process_token = nothing_image_token
-        
+    
     outputs, orig, hidden_states = model(
         input_ids, pixel_values, past_key_values=past_key_values, output_orig=True
     )
+    
     image_features = None
     if pixel_values is not None:
         image_features = model.get_image_features(pixel_values)
@@ -357,7 +398,7 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
         token = torch.argmax(orig[:, -1])
         token = token[None, None]
     ea_layer_device = model.ea_layer.fc.weight.device
-    filtered_input_ids, filtered_hidden_states = process_token(input_ids, model.base_model.config.image_token_index, hidden_states)
+    filtered_input_ids, filtered_hidden_states = process_token(input_ids, model.base_model.config.image_token_index, hidden_states, outputs.attentions)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)

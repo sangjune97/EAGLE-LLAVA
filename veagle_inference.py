@@ -9,11 +9,11 @@ from fastchat.model import get_conversation_template
 
 # GPU 인덱스 0과 1을 사용하도록 설정
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
-processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-13b-hf")
+processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
 model = EaModel.from_pretrained(
-    base_model_path="llava-hf/llava-1.5-13b-hf",
-    ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt/not_finetune_w_img_1e-4_13b/state_20",
+    base_model_path="llava-hf/llava-1.5-7b-hf",
+    ea_model_path="/data/sangjun/ckpt/not_finetune_w_img_1e-4_only_hidden_large_sharegpt/state_20",
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True,
     device_map="auto",
@@ -45,7 +45,7 @@ generate_ids, new_token, idx, avg_accept_length  = model.eagenerate(
     log=True,
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
     max_new_tokens=1024,
-    token_process = 0
+    token_process = 5
     )
 output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
 print("Outputs:\n")
