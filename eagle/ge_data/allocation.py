@@ -14,7 +14,7 @@ e = 102025 -1
 gpus = [[0],[1],[2],[3],[4],[5],[6],[7]]
 
 num_p = len(gpus)
-outdir = '{}/llava_{}_{}_mufp16_remove'.format(args.outdir,s,e)
+outdir = '{}/llava_{}_{}_mufp16_llavadataset'.format(args.outdir,s,e)
 
 
 def split_range(start, end, n, over=False):

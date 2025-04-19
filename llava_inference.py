@@ -2,12 +2,12 @@ from PIL import Image
 import requests
 import inspect
 from transformers import AutoProcessor, AutoTokenizer, LlavaForConditionalGeneration
-model = LlavaForConditionalGeneration.from_pretrained("llava-hf/llava-1.5-7b-hf", device_map="auto")
-processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
-tokenizer = AutoTokenizer.from_pretrained("llava-hf/llava-1.5-7b-hf")
+model = LlavaForConditionalGeneration.from_pretrained("/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369", device_map="auto")
+processor = AutoProcessor.from_pretrained("/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369")
+tokenizer = AutoTokenizer.from_pretrained("/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369")
 
 prompt = "USER: <image>\nWhat's the content of the image? explain in very detail. ASSISTANT:"
-url = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Cat_August_2010-4.jpg/800px-Cat_August_2010-4.jpg"
+url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRKhJ9vY-WJviH34cgDfbG2Hn_cBf0t5BBmaWrmH--NzBO3pjGP6hjV7pb8s958ug9K7p6iR-3vz6nlw7c4i5ZdMw"
 image = Image.open(requests.get(url, stream=True).raw)
 
 inputs = processor(images=image, text=prompt, return_tensors="pt")

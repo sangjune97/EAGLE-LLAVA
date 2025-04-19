@@ -225,6 +225,7 @@ class EaModel(nn.Module):
             log=False,
             is_llama3=False,
             token_process=0,
+            num_img_tokens=0
             
 
     ):
@@ -264,7 +265,7 @@ class EaModel(nn.Module):
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
         draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
-            input_ids, self, pixel_values, past_key_values, logits_processor, token_process
+            input_ids, self, pixel_values, past_key_values, logits_processor, token_process, num_img_tokens
         )
         new_token = 0
         
@@ -317,7 +318,8 @@ class EaModel(nn.Module):
                 self,
                 hidden_state_new,
                 sample_p,
-                token_process
+                token_process,
+                num_img_tokens,
             )
 
             if is_llama3:

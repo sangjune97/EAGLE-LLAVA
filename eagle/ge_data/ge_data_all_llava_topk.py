@@ -31,7 +31,7 @@ def keep_topk_image_token(
     image_features,
     attentions,
     img_tok_index=32000,
-    topk=20,
+    topk=50,
 ):
     """
     input_ids: [1, seq_len]
@@ -126,14 +126,15 @@ def build_dataset_rank(
         select=None,
 ):
     processor = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
-    #image_folder = '/data/COCO/train2017'
-    image_folder = '/data'
+    image_folder = '/data/coco/train2017'
+    #image_folder = '/data'
     
     #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
-    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
-    ds = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")
+    ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
+    #ds = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")
     
     ds = ds['train']
+    
     ds = ds.shuffle(seed=41)
     ds1 = ds.select(range(args.start, args.end))
     original_columns1 = ds1.column_names
@@ -257,10 +258,9 @@ bigmodel.eval()
 
 @torch.no_grad()
 def ge(data):
-    max_len = 2048
-    input_ids=data["input_ids"][:, :max_len]
+    input_ids=data["input_ids"]
     pixel_values=data["pixel_values"]
-    loss_mask=data["loss_mask"][:, :max_len]
+    loss_mask=data["loss_mask"]
     
     outs_big = bigmodel(input_ids.cuda(), pixel_values.cuda(), output_hidden_states=True, output_attentions=True)
     
@@ -277,7 +277,7 @@ def ge(data):
     torch.cuda.empty_cache()
     td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu(),"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()}
      # GPU 텐서는 여기서 더 안 쓸 거면 즉시 지워서 참조 해제
-    colorize_text(input_ids[0], loss_mask[0], bigtokenizer)
+    #colorize_text(input_ids[0], loss_mask[0], bigtokenizer)
     del hidden_state_big
     gc.collect()
     torch.cuda.empty_cache()

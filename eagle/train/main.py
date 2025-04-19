@@ -5,7 +5,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message="TypedStorage is
 parser = argparse.ArgumentParser(description='sp')
 parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
 parser.add_argument('--configpath', type=str, default="config.json")
-parser.add_argument('--pretrainedpath', type=str, default='yuhuili/EAGLE-Vicuna-7B-v1.3')
+parser.add_argument('--pretrainedpath', type=str, default='/data/sangjun/ckpt/pretrain/state_50')
 parser.add_argument('--lr', type=float, default=3e-5)
 parser.add_argument('--bs', type=int, default=4 )
 parser.add_argument('--epoch', type=int, default=20)
@@ -321,8 +321,8 @@ if accelerator.is_main_process:
         os.makedirs(args.cpdir)
 
 config = EConfig.from_pretrained(train_config["config_path"])
-model = Model(config, load_emb=True, path=args.basepath)
-#model = Model.from_pretrained(config, path=args.pretrainedpath)
+#model = Model(config, load_emb=True, path=args.basepath)
+model = Model.from_pretrained(config, path=args.pretrainedpath)
 criterion = nn.SmoothL1Loss(reduction="none")
 optimizer = optim.AdamW(model.parameters(), lr=train_config["lr"], betas=(train_config["b1"], train_config["b2"]))
 

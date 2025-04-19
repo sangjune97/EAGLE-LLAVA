@@ -622,13 +622,15 @@ class Model(nn.Module):
         with torch.no_grad():
             inputs_embeds = self.embed_tokens(input_ids)
             if image_features is not None:
+                
                 n_image_tokens = (input_ids == 32000).sum(dim=-1)[0].item()
                 n_image_features = image_features.shape[1]
                 if n_image_tokens != n_image_features:
                     image_features = None
-                    #raise ValueError(
+                    print(f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}")
+                    # raise ValueError(
                     #    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                    #)
+                    # )
                 else :
                     special_image_mask = (
                         (input_ids == 32000)
@@ -666,20 +668,20 @@ class Model(nn.Module):
 
         inputs_embeds = inputs_embeds.to(hidden_states.dtype)
         
-        # if image_features is not None:
-        #     token_mask = special_image_mask.any(dim=-1, keepdim=True)  # (batch, seq, 1)
+        if image_features is not None:
+            token_mask = special_image_mask.any(dim=-1, keepdim=True)  # (batch, seq, 1)
             
-        #     # 일반 토큰 처리 → concat 후 fc 처리
-        #     concat = torch.cat((inputs_embeds, hidden_states), dim=-1)  # (1,700,8192)
-        #     out_fc = self.fc(concat)  # 일반 토큰 처리 결과
+            # 일반 토큰 처리 → concat 후 fc 처리
+            concat = torch.cat((inputs_embeds, hidden_states), dim=-1)  # (1,700,8192)
+            out_fc = self.fc(concat)  # 일반 토큰 처리 결과
             
-        #     # 이미지 토큰 처리 → inputs_embeds 그대로 유지
-        #     out_fc2 = hidden_states  # hidden_states 사용 X
+            # 이미지 토큰 처리 → inputs_embeds 그대로 유지
+            out_fc2 = hidden_states  # hidden_states 사용 X
             
-        #     # token_mask에 따라 결과 선택
-        #     hidden_states = torch.where(token_mask.expand_as(out_fc), out_fc2, out_fc)
-        # else:
-        hidden_states = self.fc(torch.cat((inputs_embeds, hidden_states), dim=-1))
+            # token_mask에 따라 결과 선택
+            hidden_states = torch.where(token_mask.expand_as(out_fc), out_fc2, out_fc)
+        else:
+            hidden_states = self.fc(torch.cat((inputs_embeds, hidden_states), dim=-1))
         
 
         all_hidden_states = () if output_hidden_states else None

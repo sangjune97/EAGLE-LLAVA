@@ -79,7 +79,9 @@ def eval_model(args):
                 top_p=args.top_p,
                 max_new_tokens=1024,
                 log=True,
-                token_process=args.token_process)
+                token_process=args.token_process,
+                num_img_tokens = args.num_img_tok,
+                )
             
         # **시간 측정 종료**
         torch.cuda.synchronize()
@@ -119,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--token-process", type=int, default=0)
+    parser.add_argument("--num_img_tok", type=int, default=0)
     args = parser.parse_args()
 
     eval_model(args)
