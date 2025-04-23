@@ -11,8 +11,12 @@ parser.add_argument('--bs', type=int, default=4 )
 parser.add_argument('--epoch', type=int, default=20)
 parser.add_argument('--gradient-accumulation-steps', type=int, default=1)
 parser.add_argument('--tmpdir', type=str, default='0')
+parser.add_argument('--data_num', type=int, default=259736)
 parser.add_argument('--cpdir', type=str, default='0')
 args = parser.parse_args()
+
+total_steps = int(args.data_num * 0.95 * (args.epoch + 1) / (args.bs * args.gradient_accumulation_steps))
+warm_steps = total_steps // 100
 
 train_config = {
     "lr": args.lr,
@@ -22,8 +26,8 @@ train_config = {
     "is_warmup": True,
     "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
-    "num_warmup_steps": 2000,
-    "total_steps": 800000,
+    "num_warmup_steps": warm_steps,
+    "total_steps": total_steps,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
@@ -44,6 +48,7 @@ train_config = {
     "grad_clip": 0.5,
     "save_freq": 5
 }
+
 import json
 from safetensors import safe_open
 # from transformers import AutoModelForCausalLM, AutoTokenizer,AutoModelForSequenceClassification
@@ -71,7 +76,6 @@ from transformers import get_linear_schedule_with_warmup, AutoConfig, LlavaForCo
 
 if accelerator.is_main_process:
     import wandb
-
     wandb.init(project="ess", entity="eslab_sj", config=train_config)
 
 baseconfig = AutoConfig.from_pretrained(args.basepath).text_config

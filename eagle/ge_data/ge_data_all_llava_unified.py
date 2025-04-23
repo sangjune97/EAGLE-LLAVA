@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor, BitsAndBytesConfig, LlavaForConditionalGeneration
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
@@ -31,7 +31,7 @@ def keep_topk_image_token(
     image_features,
     attentions,
     img_tok_index=32000,
-    topk=0,
+    topk=576,
 ):
     """
     input_ids: [1, seq_len]
@@ -122,22 +122,24 @@ def longest_common_prefix(list1, list2):
 
 
 def build_dataset_rank(
-        tokenizer, split="train",
+        tokenizer,
+        split="train",
         select=None,
 ):
     processor = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
-    image_folder = '/data/coco/train2017'
-    #image_folder = '/data'
     
-    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
-    ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
-    #ds = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")
+    # 1) 로드 및 image_folder 태깅
+    ds1 = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")[split]
+    ds1 = ds1.add_column('image_folder', ['/data/coco/train2017'] * len(ds1))
+    ds2 = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")[split]
+    ds2 = ds2.add_column('image_folder', ['/data'] * len(ds2))
     
-    ds = ds['train']
     
-    ds = ds.shuffle(seed=41)
-    ds1 = ds.select(range(args.start, args.end))
-    original_columns1 = ds1.column_names
+    # 2) 병합 및 선택
+    ds = concatenate_datasets([ds1, ds2]).shuffle(seed=41)
+    ds = ds.select(range(args.start, args.end))
+        
+    original_columns = ds.column_names
     num_proc = 4
     
     
@@ -170,7 +172,8 @@ def build_dataset_rank(
             conversation=conv.get_prompt()
             
             image_file = examples['image'][i]
-            image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
+            folder = examples['image_folder'][i]
+            image = Image.open(os.path.join(folder, image_file)).convert('RGB')
             inputs = processor(images=image, text=conversation, return_tensors="pt")
             input_ids=torch.as_tensor(inputs["input_ids"])[0]
             pixel_values=torch.as_tensor(inputs["pixel_values"])[0]
@@ -223,21 +226,16 @@ def build_dataset_rank(
             new_examples["loss_mask"].append(loss_mask[None,:])
 
         return new_examples
-    ds1 = ds1.map(
+    ds = ds.map(
         preprocess_function,
         batched=True,
         num_proc=num_proc,
-        remove_columns=original_columns1,
+        remove_columns=original_columns,
         load_from_cache_file=False
     )
-    # ds1 = ds1.filter(lambda x: len(x["input_ids"]) < 1024, batched=False)
-    # ds1 = ds1.filter(lambda x: x['queryf'] not in gqs, batched=False)
-    # ds1 = ds1.filter(lambda x: "Are there any tips in regards to teaching" in x['queryf'], batched=False)
 
-    ds1.set_format(type="torch")
-    # ds2.set_format(type="torch")
-    # dst.set_format(type="torch")
-    return ds1
+    ds.set_format(type="torch")
+    return ds
 
 bigtokenizer = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369').tokenizer
 ds = build_dataset_rank(bigtokenizer)

@@ -305,7 +305,9 @@ def remove_image_token_except_last(input_ids, img_tok_index, hidden_states=None)
     
     return filtered_input_ids
 
-def remove_image_token(input_ids, img_tok_index, hidden_states=None):
+def remove_image_token(input_ids, img_tok_index, hidden_states=None, attentions=None,
+    image_features=None,
+    topk=20):
     mask = input_ids != img_tok_index
     filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
     if hidden_states is not None:
