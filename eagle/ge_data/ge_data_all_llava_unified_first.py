@@ -23,7 +23,46 @@ from PIL import Image
 
 bigname="/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369"
 #bigname="lmsys/vicuna-7b-v1.5"
+def remove_image_token_except_first(input_ids, img_tok_index, loss_mask, hidden_states=None):
+    # input_ids, loss_mask는 (1, seq_len) 형태라고 가정
+    # hidden_states는 (1, seq_len, hidden_dim) 형태라고 가정
+    
+    # (1, seq_len) -> (seq_len,)로 차원 축소
+    flat_input_ids = input_ids.squeeze(0)   # (seq_len,)
+    flat_loss_mask = loss_mask.squeeze(0)     # (seq_len,)
+
+    # img_tok_index(예: 32000)인 위치 전부 찾기
+    positions = (flat_input_ids == img_tok_index).nonzero(as_tuple=True)[0]
+    
+    # 만약 img_tok_index가 여러 개라면, 첫 번째 위치만 남기고 나머지는 제거하는 마스크 생성
+    if len(positions) > 1:
+        first_pos = positions[0]
         
+        # 전체를 True로 초기화
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+        # img_tok_index가 있는 위치 전부 False로 설정
+        keep_mask[positions] = False
+        # 첫 번째 위치만 True로 되돌림
+        keep_mask[first_pos] = True
+    else:
+        # img_tok_index가 없거나 한 개만 있을 경우에는 전체 유지
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+
+    # 생성된 마스크를 이용해 input_ids와 loss_mask 필터링 후 (1, -1) 형태로 변환
+    filtered_input_ids = flat_input_ids[keep_mask].unsqueeze(0)
+    filtered_loss_mask = flat_loss_mask[keep_mask].unsqueeze(0)
+    
+    if hidden_states is not None:
+        # hidden_states: (1, seq_len, hidden_dim) -> (seq_len, hidden_dim)
+        flat_hidden_states = hidden_states.squeeze(0)
+        # keep_mask를 적용하여 필터링 후 다시 (1, -1, hidden_dim) 형태로 변환
+        filtered_hidden_states = flat_hidden_states[keep_mask, :].unsqueeze(0)
+        
+        return filtered_input_ids, filtered_loss_mask, filtered_hidden_states
+    
+    return filtered_input_ids, filtered_loss_mask
+
+     
 def keep_topk_image_token(
     input_ids,
     loss_mask,
@@ -266,16 +305,17 @@ def ge(data):
     hidden_state_big = outs_big.hidden_states[-1].cpu()
     
     
-    input_ids, loss_mask, hidden_state_big, image_features = keep_topk_image_token(input_ids, loss_mask, hidden_state_big, image_features, outs_big.attentions)
-    
+    input_ids, loss_mask, hidden_state_big = remove_image_token_except_first(input_ids, 32000, loss_mask, hidden_state_big)
+    image_features = outs_big.image_hidden_states[:, -1, :].unsqueeze(1)
     del outs_big
     
     # 캐시 정리 (가비지 컬렉션 + CUDA 캐시 해제)
     gc.collect()
     torch.cuda.empty_cache()
-    td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu(),"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()}
+    td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big[0].cpu(),"loss_mask":loss_mask.cpu()[0], "image_features":image_features[0].cpu()}
      # GPU 텐서는 여기서 더 안 쓸 거면 즉시 지워서 참조 해제
-    #colorize_text(input_ids[0], loss_mask[0], bigtokenizer)
+    # colorize_text(input_ids[0], loss_mask[0], bigtokenizer)
+    # input()
     del hidden_state_big
     gc.collect()
     torch.cuda.empty_cache()
