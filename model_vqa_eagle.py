@@ -100,7 +100,7 @@ def eval_model(args):
                                    "model_id": model_name,
                                    "total_time": total_time,
                                    "num_tokens": num_tokens,
-                                   "tok_per_sec": tok_per_sec,   
+                                   "tok_per_sec": tok_per_sec,
                                    "avg_accept_length":avg_accept_length,
                                    "metadata": {}}) + "\n")
         ans_file.flush()

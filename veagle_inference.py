@@ -12,8 +12,8 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
 
 model = EaModel.from_pretrained(
-    base_model_path="llava-hf/llava-1.5-7b-hf",
-    ea_model_path="/data/sangjun/ckpt/not_finetune_w_img_1e-4_hidden_sharegpt_attn_score100/state_40",
+    base_model_path="/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369",
+    ea_model_path="/data/sangjun/ckpt/finetune_w_img_1e-4_cls_hidden_llavashare_40epoch_embd/state_40",
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True,
     device_map="auto",
@@ -39,14 +39,14 @@ inputs = processor(images=image, text=prompt, return_tensors="pt")
 #input_ids=tokenizer([prompt]).input_ids
 #input_ids = torch.as_tensor(input_ids).cuda()
 #
+
 generate_ids, new_token, idx, avg_accept_length  = model.eagenerate(
     input_ids = torch.as_tensor(inputs["input_ids"]).cuda(),
     temperature=0,
     log=True,
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
     max_new_tokens=1024,
-    token_process = 5,
-    num_img_tokens=100
+    token_process = 4,
     )
 output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
 print("Outputs:\n")

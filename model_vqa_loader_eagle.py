@@ -74,16 +74,18 @@ def eval_model(args):
     # Model
     disable_torch_init()
     model_path = os.path.expanduser(args.model_path)
+    ea_model_path = os.path.expanduser(args.ea_model_path)
     model_name = get_model_name_from_path(model_path)
     processor = AutoProcessor.from_pretrained(model_path)
     #tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
     model = EaModel.from_pretrained(
         base_model_path=model_path,
-        ea_model_path="/home/sangjun/EAGLE-LLAVA/ckpt/state_40",
+        ea_model_path=ea_model_path,
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
         device_map="auto",
-        total_token=-1,
+        total_token=60,
+        depth=5
     )
     model.eval()
 
@@ -108,14 +110,16 @@ def eval_model(args):
         start_time = time.time()
 
         with torch.inference_mode():
-            output_ids, _, _, avg_accept_length = model.eagenerate(
+            output_ids, _ , _ , avg_accept_length = model.eagenerate(
                 input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
-                attention_mask=torch.as_tensor(inputs["attention_mask"]).cuda(), 
                 pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
                 temperature=args.temperature,
                 top_p=args.top_p,
-                max_new_tokens=args.max_new_tokens,
-                log=True)
+                max_new_tokens=1024,
+                log=True,
+                token_process=args.token_process,
+                num_img_tokens = args.num_img_tok,
+                )
             
         # **시간 측정 종료**
         torch.cuda.synchronize()
@@ -136,7 +140,7 @@ def eval_model(args):
                                    "total_time": total_time,
                                    "num_tokens": num_tokens,
                                    "tok_per_sec": tok_per_sec,
-                                   "avg_accept_length":avg_accept_length.item(),
+                                   "avg_accept_length":avg_accept_length,
                                    "metadata": {}}) + "\n")
         # ans_file.flush()
     ans_file.close()
@@ -144,6 +148,7 @@ def eval_model(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", type=str, default="facebook/opt-350m")
+    parser.add_argument("--ea-model-path", type=str, default="facebook/opt-350m")
     parser.add_argument("--model-base", type=str, default=None)
     parser.add_argument("--image-folder", type=str, default="")
     parser.add_argument("--question-file", type=str, default="tables/question.jsonl")
@@ -155,6 +160,8 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--max_new_tokens", type=int, default=128)
+    parser.add_argument("--token-process", type=int, default=0)
+    parser.add_argument("--num_img_tok", type=int, default=0)
     args = parser.parse_args()
 
     eval_model(args)
