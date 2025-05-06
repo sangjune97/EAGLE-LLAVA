@@ -622,24 +622,17 @@ class Model(nn.Module):
         with torch.no_grad():
             inputs_embeds = self.embed_tokens(input_ids)
             if image_features is not None:
-                
-                n_image_tokens = (input_ids == 32000).sum(dim=-1)[0].item()
-                n_image_features = image_features.shape[1]
-                if n_image_tokens != n_image_features:
-                    image_features = None
-                    print(f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}")
-                    # raise ValueError(
-                    #    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                    # )
-                else :
-                    special_image_mask = (
-                        (input_ids == 32000)
-                        .unsqueeze(-1)
-                        .expand_as(inputs_embeds)
-                        .to(inputs_embeds.device)
-                    )
-                    image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
-                    inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
+                # 32000이 있는 index 하나만 찾기
+                img_idx = (input_ids == 32000).nonzero(as_tuple=True)[1].item()
+
+                # image_features 모양 맞추기 (필요시)
+                if image_features.dim() == 3:
+                    img_feature = image_features[0, 0]  # [dim]
+                else:
+                    img_feature = image_features[0]  # [dim]
+
+                # 입력 임베딩에 직접 삽입
+                inputs_embeds[0, img_idx] = img_feature.to(inputs_embeds.device, inputs_embeds.dtype)
         batch_size, seq_length, _ = hidden_states.shape
         seq_length_with_past = seq_length
         past_key_values_length = 0
@@ -669,19 +662,21 @@ class Model(nn.Module):
         inputs_embeds = inputs_embeds.to(hidden_states.dtype)
         
         if image_features is not None:
-            token_mask = special_image_mask.any(dim=-1, keepdim=True)  # (batch, seq, 1)
-            
-            # 일반 토큰 처리 → concat 후 fc 처리
-            concat = torch.cat((inputs_embeds, hidden_states), dim=-1)  # (1,700,8192)
-            out_fc = self.fc(concat)  # 일반 토큰 처리 결과
-            
-            # 이미지 토큰 처리 → inputs_embeds 그대로 유지
-            out_fc2 = inputs_embeds  # hidden_states 사용 X
-            
-            # token_mask에 따라 결과 선택
-            hidden_states = torch.where(token_mask.expand_as(out_fc), out_fc2, out_fc)
+            # 이미지 토큰 위치 하나 찾기
+            img_idx = (input_ids == 32000).nonzero(as_tuple=True)[1].item()
+
+            # 일반 토큰 처리
+            concat = torch.cat((inputs_embeds, hidden_states), dim=-1)  # (1, seq_len, *)
+            out_fc = self.fc(concat)
+
+            # out_fc에서 이미지 토큰 위치만 inputs_embeds로 덮어쓰기
+            out_fc[0, img_idx] = inputs_embeds[0, img_idx]
+
+            hidden_states = out_fc
         else:
             hidden_states = self.fc(torch.cat((inputs_embeds, hidden_states), dim=-1))
+            
+            
         
 
         all_hidden_states = () if output_hidden_states else None

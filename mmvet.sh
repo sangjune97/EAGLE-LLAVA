@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 # 첫 번째 인자를 EA 모델 경로로 받음
 EA_MODEL_PATH=$1

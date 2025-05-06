@@ -4,14 +4,18 @@ warnings.filterwarnings("ignore", category=UserWarning)
 parser = argparse.ArgumentParser(description='sp')
 parser.add_argument('--basepath', type=str, default='/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
 parser.add_argument('--configpath', type=str, default="config.json")
-parser.add_argument('--pretrainedpath', type=str, default='yuhuili/EAGLE-Vicuna-7B-v1.3')
+parser.add_argument('--pretrainedpath', type=str, default='/data/sangjun/ckpt/pretrain/state_50')
 parser.add_argument('--lr', type=float, default=3e-5)
 parser.add_argument('--bs', type=int, default=4 )
 parser.add_argument('--epoch', type=int, default=20)
 parser.add_argument('--gradient-accumulation-steps', type=int, default=1)
 parser.add_argument('--tmpdir', type=str, default='0')
+parser.add_argument('--data_num', type=int, default=259736)
 parser.add_argument('--cpdir', type=str, default='0')
 args = parser.parse_args()
+
+total_steps = int(args.data_num * 0.95 * (args.epoch + 1) / (args.bs * args.gradient_accumulation_steps))
+warm_steps = total_steps // 100
 
 train_config = {
     "lr": args.lr,
@@ -21,8 +25,8 @@ train_config = {
     "is_warmup": True,
     "num_epochs": args.epoch,
     # Depending on your data and model size, the larger the model, the higher the sample efficiency. We recommend setting it between 20-40.
-    "num_warmup_steps": 2000,
-    "total_steps": 800000,
+    "num_warmup_steps": warm_steps,
+    "total_steps": total_steps,
     "p_w": 0.1,
     "v_w": 1.0,
     "head_w": 0.1,
@@ -318,8 +322,8 @@ if accelerator.is_main_process:
         os.makedirs(args.cpdir)
 
 config = EConfig.from_pretrained(train_config["config_path"])
-model = Model(config, load_emb=True, path=args.basepath)
-#model = Model.from_pretrained(config, path=args.pretrainedpath)
+#model = Model(config, load_emb=True, path=args.basepath)
+model = Model.from_pretrained(config, path=args.pretrainedpath)
 criterion = nn.SmoothL1Loss(reduction="none")
 optimizer = optim.AdamW(model.parameters(), lr=train_config["lr"], betas=(train_config["b1"], train_config["b2"]))
 
