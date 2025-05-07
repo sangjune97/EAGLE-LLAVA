@@ -31,7 +31,7 @@ def keep_topk_image_token(
     image_features,
     attentions,
     img_tok_index=32000,
-    topk=576,
+    topk=200,
 ):
     """
     input_ids: [1, seq_len]
