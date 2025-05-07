@@ -21,7 +21,7 @@ import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
-bigname="/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369"
+bigname="/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-13b-hf/snapshots/5dda2880bda009266dda7c4baff660b95ca64540"
 #bigname="lmsys/vicuna-7b-v1.5"
 def remove_image_token_except_first(input_ids, img_tok_index, loss_mask, hidden_states=None):
     # input_ids, loss_mask는 (1, seq_len) 형태라고 가정
@@ -165,7 +165,7 @@ def build_dataset_rank(
         split="train",
         select=None,
 ):
-    processor = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
+    processor = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-13b-hf/snapshots/5dda2880bda009266dda7c4baff660b95ca64540')
     
     # 1) 로드 및 image_folder 태깅
     ds1 = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")[split]
@@ -276,7 +276,7 @@ def build_dataset_rank(
     ds.set_format(type="torch")
     return ds
 
-bigtokenizer = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369').tokenizer
+bigtokenizer = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-13b-hf/snapshots/5dda2880bda009266dda7c4baff660b95ca64540').tokenizer
 ds = build_dataset_rank(bigtokenizer)
 print(ds)
 bigmodel = LlavaForConditionalGeneration.from_pretrained(bigname,  device_map="cuda",torch_dtype=torch.float16, attn_implementation="eager")
