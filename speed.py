@@ -2,7 +2,7 @@ import json
 import numpy as np
 
 # JSONL 파일 경로 설정
-jsonl_file1 = "/data/sangjun/ckpt/finetune_wo_img_1e-4_hidden_llavashare_40epoch/state_40/mmvet.jsonl"  # 첫 번째 JSONL 파일 경로
+jsonl_file1 = "/data/sangjun/ckpt/token/finetune_w_img_1e-4_300_layer2/state_20/mmvet.jsonl"  # 첫 번째 JSONL 파일 경로
 #jsonl_file2 = "/home/sangjun/LLaVA/scripts/v1_5/eval/playground/data/eval/mm-vet/answers_1gpu/llava-v1.5-7b.jsonl"  # 두 번째 JSONL 파일 경로
 jsonl_file2 = "/data/sangjun/ckpt/llava-v1.5-7b/mmvet.jsonl"  # 두 번째 JSONL 파일 경로
 

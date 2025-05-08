@@ -444,6 +444,7 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
         input_ids=input_ids,
         img_tok_index=model.base_model.config.image_token_index,
         hidden_states=hidden_states,
+        attentions=outputs.attentions,
         image_features=image_features)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
