@@ -20,7 +20,19 @@ from .kv_cache import initialize_past_key_values
 from .cnets import Model
 from .configs import EConfig
 
+def start_timer():
+    torch.cuda.synchronize()
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    return start, end
 
+def end_timer(start, end, name="블록"):
+    end.record()
+    torch.cuda.synchronize()
+    elapsed = start.elapsed_time(end)
+    #print(f"[{name}] 실행 시간: {elapsed:.3f} ms")
+    return elapsed
 
 
 
@@ -229,7 +241,7 @@ class EaModel(nn.Module):
             
 
     ):
-        tokenizer = AutoTokenizer.from_pretrained('lmsys/vicuna-7b-v1.3')
+        start, end = start_timer()#timer start
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
         max_length=max_length-self.ea_layer.total_tokens-10
@@ -264,17 +276,27 @@ class EaModel(nn.Module):
             self.current_length_data = current_length_data
         input_len = input_ids.shape[1]
         reset_tree_mode(self)
+        
+        initialize_time = end_timer(start, end, name="initialize")#timer end
+        
+        start, end = start_timer()#timer start
+        
         draft_tokens, retrieve_indices,tree_mask,tree_position_ids, logits, hidden_state, sample_token = initialize_tree(
             input_ids, self, pixel_values, past_key_values, logits_processor, token_process, num_img_tokens
         )
+        
+        initialize_tree_time = end_timer(start, end, name="initialize_tree")#timer end
         new_token = 0
         
         # accept_length 누적 리스트
         accept_lengths = []
         
-
+        tree_decode_total_time = 0
+        evaluate_posterior_total_time = 0
+        update_inference_inputs_total_time = 0
         for idx in range(max_length):
             #with Timer("all"):
+            start, end = start_timer()#timer start
             self.base_model.language_model.model.tree_mask = tree_mask
 
             draft_tokens=draft_tokens.to(input_ids.device)
@@ -289,6 +311,8 @@ class EaModel(nn.Module):
                 input_ids,
                 retrieve_indices,
             )
+            tree_decode_total_time  += end_timer(start, end, name="tree_decoding")#timer end
+            start, end = start_timer()#timer start
             
             padding = padding.to(draft_tokens.device)
             draft_tokens=torch.cat((draft_tokens,padding),dim=1)
@@ -296,6 +320,8 @@ class EaModel(nn.Module):
             best_candidate, accept_length, sample_p = evaluate_posterior(
                 logits, candidates, logits_processor
             )
+            evaluate_posterior_total_time  += end_timer(start, end, name="evaluate_posterior")#timer end
+            start, end = start_timer()#timer start
             #tok = tokenizer.convert_ids_to_tokens(candidates[best_candidate][0:1+accept_length])
             #print(tok)
             
@@ -321,6 +347,7 @@ class EaModel(nn.Module):
                 token_process,
                 num_img_tokens,
             )
+            update_inference_inputs_total_time  += end_timer(start, end, name="update_inference_inputs")#timer end
 
             if is_llama3:
                 if stop_token_id in input_ids[0, input_len:].tolist():
@@ -336,11 +363,10 @@ class EaModel(nn.Module):
         # 평균 accept_length 계산
         
         avg_accept_length = sum(accept_lengths) / len(accept_lengths) if accept_lengths else 0.0
-        
         if not log:
             return input_ids
         else:
-            return input_ids, new_token, idx, avg_accept_length
+            return input_ids, new_token, idx, avg_accept_length, initialize_time, initialize_tree_time, tree_decode_total_time, evaluate_posterior_total_time, update_inference_inputs_total_time
 
 
     @torch.no_grad()

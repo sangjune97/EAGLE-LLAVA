@@ -8,12 +8,12 @@ import os
 from fastchat.model import get_conversation_template
 
 # GPU 인덱스 0과 1을 사용하도록 설정
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
-processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+processor = AutoProcessor.from_pretrained("/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369")
 
 model = EaModel.from_pretrained(
-    base_model_path="llava-hf/llava-1.5-7b-hf",
-    ea_model_path="/data/sangjun/ckpt/not_finetune_w_img_1e-4_hidden_sharegpt_attn_score100/state_40",
+    base_model_path="/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369",
+    ea_model_path="/data/sangjun/ckpt/token/finetune_w_img_1e-4_300/state_20",
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True,
     device_map="auto",
@@ -23,7 +23,7 @@ model = EaModel.from_pretrained(
 #yuhuili/EAGLE-Vicuna-13B-v1.3
 model.eval()
 
-prompt = "USER: <image>\nWhat is the image? ASSISTANT:"
+prompt = "USER: <image>\nWhat is the image? Please descibre in very very in detailed. ASSISTANT:"
 url = "https://www.pncc.govt.nz/files/assets/public/v/2/images/services/animals/doggos.jpg?w=1920&h=1080"
 image = Image.open(requests.get(url, stream=True).raw)
 #image = Image.open(os.path.join("/home/sangjun/LLaVA/playground/data/eval/mm-vet/images/v1_30.jpg")).convert('RGB')
@@ -38,13 +38,13 @@ inputs = processor(images=image, text=prompt, return_tensors="pt")
 #tokenizer = AutoTokenizer.from_pretrained('lmsys/vicuna-7b-v1.3')
 #input_ids=tokenizer([prompt]).input_ids
 #input_ids = torch.as_tensor(input_ids).cuda()
-#
-generate_ids, new_token, idx, avg_accept_length  = model.eagenerate(
+
+generate_ids, new_token, idx, avg_accept_length, initialize_time, initialize_tree_time, tree_decode_total_time, evaluate_posterior_total_time, update_inference_inputs_total_time  = model.eagenerate(
     input_ids = torch.as_tensor(inputs["input_ids"]).cuda(),
     temperature=0,
     log=True,
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
-    max_new_tokens=1024,
+    max_new_tokens=256,
     token_process = 5,
     num_img_tokens=100
     )
@@ -52,6 +52,11 @@ output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up
 print("Outputs:\n")
 print(output)
 print(avg_accept_length)
+print("initialize_time:", initialize_time)
+print("initialize_tree_time:", initialize_tree_time)
+print("tree_decode_total_time:", tree_decode_total_time)
+print("evaluate_posterior_total_time:", evaluate_posterior_total_time)
+print("update_inference_inputs_total_time:",update_inference_inputs_total_time)
 
 
 

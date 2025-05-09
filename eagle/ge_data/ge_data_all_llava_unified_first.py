@@ -16,14 +16,53 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor, BitsAndBytesConfig, LlavaForConditionalGeneration
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 import json
 from fastchat.model.model_adapter import get_conversation_template
 from PIL import Image
 
 bigname="/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369"
 #bigname="lmsys/vicuna-7b-v1.5"
+def remove_image_token_except_first(input_ids, img_tok_index, loss_mask, hidden_states=None):
+    # input_ids, loss_mask는 (1, seq_len) 형태라고 가정
+    # hidden_states는 (1, seq_len, hidden_dim) 형태라고 가정
+    
+    # (1, seq_len) -> (seq_len,)로 차원 축소
+    flat_input_ids = input_ids.squeeze(0)   # (seq_len,)
+    flat_loss_mask = loss_mask.squeeze(0)     # (seq_len,)
+
+    # img_tok_index(예: 32000)인 위치 전부 찾기
+    positions = (flat_input_ids == img_tok_index).nonzero(as_tuple=True)[0]
+    
+    # 만약 img_tok_index가 여러 개라면, 첫 번째 위치만 남기고 나머지는 제거하는 마스크 생성
+    if len(positions) > 1:
+        first_pos = positions[0]
         
+        # 전체를 True로 초기화
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+        # img_tok_index가 있는 위치 전부 False로 설정
+        keep_mask[positions] = False
+        # 첫 번째 위치만 True로 되돌림
+        keep_mask[first_pos] = True
+    else:
+        # img_tok_index가 없거나 한 개만 있을 경우에는 전체 유지
+        keep_mask = torch.ones_like(flat_input_ids, dtype=torch.bool)
+
+    # 생성된 마스크를 이용해 input_ids와 loss_mask 필터링 후 (1, -1) 형태로 변환
+    filtered_input_ids = flat_input_ids[keep_mask].unsqueeze(0)
+    filtered_loss_mask = flat_loss_mask[keep_mask].unsqueeze(0)
+    
+    if hidden_states is not None:
+        # hidden_states: (1, seq_len, hidden_dim) -> (seq_len, hidden_dim)
+        flat_hidden_states = hidden_states.squeeze(0)
+        # keep_mask를 적용하여 필터링 후 다시 (1, -1, hidden_dim) 형태로 변환
+        filtered_hidden_states = flat_hidden_states[keep_mask, :].unsqueeze(0)
+        
+        return filtered_input_ids, filtered_loss_mask, filtered_hidden_states
+    
+    return filtered_input_ids, filtered_loss_mask
+
+     
 def keep_topk_image_token(
     input_ids,
     loss_mask,
@@ -31,9 +70,8 @@ def keep_topk_image_token(
     image_features,
     attentions,
     img_tok_index=32000,
-    topk=150,
+    topk=0,
 ):
-    
     """
     input_ids: [1, seq_len]
     loss_mask: [1, seq_len]
@@ -48,13 +86,10 @@ def keep_topk_image_token(
     input_ids = input_ids[0].to(device)        # [seq_len]
     loss_mask = loss_mask[0].to(device)        # [seq_len]
     hidden_states = hidden_states[0].to(device)  # [seq_len, dim]
-    
-    # CLS 토큰 인덱스 추출
-    cls_index = (input_ids == img_tok_index).nonzero(as_tuple=True)[0][0]
 
     # 마지막 토큰이 attend한 attention 값 추출 후 평균
     last_layer_attn = attentions[-1][0].to(device)         # [heads, seq_len, seq_len]
-    last_token_attention = last_layer_attn[:, cls_index, :].mean(dim=0)  # [seq_len]
+    last_token_attention = last_layer_attn[:, -1, :].mean(dim=0)  # [seq_len]
 
     # 이미지 토큰 인덱스 추출
     image_token_indices = (input_ids == img_tok_index).nonzero(as_tuple=True)[0]
@@ -126,22 +161,24 @@ def longest_common_prefix(list1, list2):
 
 
 def build_dataset_rank(
-        tokenizer, split="train",
+        tokenizer,
+        split="train",
         select=None,
 ):
     processor = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369')
-    image_folder = '/data/coco/train2017'
-    #image_folder = '/data'
     
-    #ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/ShareGPT_V4.3_unfiltered_cleaned_split.json")
-    ds = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")
-    #ds = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")
+    # 1) 로드 및 image_folder 태깅
+    ds1 = load_dataset('json', data_files="/home/sangjun/EAGLE-LLAVA/playground/llava_instruct_150k.json")[split]
+    ds1 = ds1.add_column('image_folder', ['/data/coco/train2017'] * len(ds1))
+    ds2 = load_dataset('json', data_files="/home/sangjun/dataset/sharegpt4v_instruct_gpt4-vision_cap100k.json")[split]
+    ds2 = ds2.add_column('image_folder', ['/data'] * len(ds2))
     
-    ds = ds['train']
     
-    ds = ds.shuffle(seed=41)
-    ds1 = ds.select(range(args.start, args.end))
-    original_columns1 = ds1.column_names
+    # 2) 병합 및 선택
+    ds = concatenate_datasets([ds1, ds2]).shuffle(seed=41)
+    ds = ds.select(range(args.start, args.end))
+        
+    original_columns = ds.column_names
     num_proc = 4
     
     
@@ -174,7 +211,8 @@ def build_dataset_rank(
             conversation=conv.get_prompt()
             
             image_file = examples['image'][i]
-            image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
+            folder = examples['image_folder'][i]
+            image = Image.open(os.path.join(folder, image_file)).convert('RGB')
             inputs = processor(images=image, text=conversation, return_tensors="pt")
             input_ids=torch.as_tensor(inputs["input_ids"])[0]
             pixel_values=torch.as_tensor(inputs["pixel_values"])[0]
@@ -227,21 +265,16 @@ def build_dataset_rank(
             new_examples["loss_mask"].append(loss_mask[None,:])
 
         return new_examples
-    ds1 = ds1.map(
+    ds = ds.map(
         preprocess_function,
         batched=True,
         num_proc=num_proc,
-        remove_columns=original_columns1,
+        remove_columns=original_columns,
         load_from_cache_file=False
     )
-    # ds1 = ds1.filter(lambda x: len(x["input_ids"]) < 1024, batched=False)
-    # ds1 = ds1.filter(lambda x: x['queryf'] not in gqs, batched=False)
-    # ds1 = ds1.filter(lambda x: "Are there any tips in regards to teaching" in x['queryf'], batched=False)
 
-    ds1.set_format(type="torch")
-    # ds2.set_format(type="torch")
-    # dst.set_format(type="torch")
-    return ds1
+    ds.set_format(type="torch")
+    return ds
 
 bigtokenizer = AutoProcessor.from_pretrained('/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369').tokenizer
 ds = build_dataset_rank(bigtokenizer)
@@ -272,16 +305,17 @@ def ge(data):
     hidden_state_big = outs_big.hidden_states[-1].cpu()
     
     
-    input_ids, loss_mask, hidden_state_big, image_features = keep_topk_image_token(input_ids, loss_mask, hidden_state_big, image_features, outs_big.attentions)
-    
+    input_ids, loss_mask, hidden_state_big = remove_image_token_except_first(input_ids, 32000, loss_mask, hidden_state_big)
+    image_features = outs_big.image_hidden_states[:, -1, :].unsqueeze(1)
     del outs_big
     
     # 캐시 정리 (가비지 컬렉션 + CUDA 캐시 해제)
     gc.collect()
     torch.cuda.empty_cache()
-    td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big.cpu(),"loss_mask":loss_mask.cpu()[0], "image_features":image_features.cpu()}
+    td={"input_ids":input_ids.cpu()[0],"image":data["image"],"hidden_state":hidden_state_big[0].cpu(),"loss_mask":loss_mask.cpu()[0], "image_features":image_features[0].cpu()}
      # GPU 텐서는 여기서 더 안 쓸 거면 즉시 지워서 참조 해제
-    #colorize_text(input_ids[0], loss_mask[0], bigtokenizer)
+    # colorize_text(input_ids[0], loss_mask[0], bigtokenizer)
+    # input()
     del hidden_state_big
     gc.collect()
     torch.cuda.empty_cache()

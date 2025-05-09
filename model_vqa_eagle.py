@@ -16,6 +16,18 @@ from llava.mm_utils import tokenizer_image_token, process_images, get_model_name
 
 from PIL import Image
 import math
+def start_timer():
+    torch.cuda.synchronize()
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    return start, end
+
+def end_timer(start, end, name="블록"):
+    end.record()
+    torch.cuda.synchronize()
+    elapsed = start.elapsed_time(end)
+    return elapsed
 
 
 def split_list(lst, n):
@@ -54,6 +66,8 @@ def eval_model(args):
     os.makedirs(os.path.dirname(answers_file), exist_ok=True)
     ans_file = open(answers_file, "w")
     for line in tqdm(questions):
+        # **시간 측정 시작**
+        start, end = start_timer()#timer start
         idx = line["question_id"]
         image_file = line["image"]
         qs = line["text"]
@@ -67,12 +81,10 @@ def eval_model(args):
         image = Image.open(os.path.join(args.image_folder, image_file)).convert('RGB')
         inputs = processor(images=image, text=prompt, return_tensors='pt')
 
-        # **시간 측정 시작**
-        torch.cuda.synchronize()
-        start_time = time.time()
+        
         
         with torch.inference_mode():
-            output_ids, _ , _ , avg_accept_length = model.eagenerate(
+            output_ids, _ , _ , avg_accept_length, initialize_time, initialize_tree_time, tree_decode_total_time, evaluate_posterior_total_time, update_inference_inputs_total_time = model.eagenerate(
                 input_ids=torch.as_tensor(inputs["input_ids"]).cuda(), 
                 pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
                 temperature=args.temperature,
@@ -84,8 +96,7 @@ def eval_model(args):
                 )
             
         # **시간 측정 종료**
-        torch.cuda.synchronize()
-        total_time = time.time() - start_time
+        total_time = end_timer(start, end, name="total")#timer end
 
         outputs = processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
         
@@ -102,6 +113,11 @@ def eval_model(args):
                                    "num_tokens": num_tokens,
                                    "tok_per_sec": tok_per_sec,   
                                    "avg_accept_length":avg_accept_length,
+                                   "initialize_time":initialize_time, 
+                                   "initialize_tree_time":initialize_tree_time, 
+                                   "tree_decode_total_time":tree_decode_total_time, 
+                                   "evaluate_posterior_total_time":evaluate_posterior_total_time, 
+                                   "update_inference_inputs_total_time":update_inference_inputs_total_time,
                                    "metadata": {}}) + "\n")
         ans_file.flush()
     ans_file.close()
