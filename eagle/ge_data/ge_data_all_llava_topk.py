@@ -31,7 +31,7 @@ def keep_topk_image_token(
     image_features,
     attentions,
     img_tok_index=32000,
-    topk=150,
+    topk=250,
 ):
     
     """

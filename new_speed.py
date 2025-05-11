@@ -1,9 +1,8 @@
 import json
 import numpy as np
-import os
+import argparse
 
 def load_jsonl_field(jsonl_file, field_name):
-    """JSONL 파일에서 특정 필드만 추출해서 리스트로 반환"""
     values = []
     with open(jsonl_file, 'r', encoding='utf-8') as f:
         for line in f:
@@ -14,7 +13,6 @@ def load_jsonl_field(jsonl_file, field_name):
     return np.array(values)
 
 def compare_jsonl_metrics_extended(file1, file2, fields_to_compare):
-    """두 JSONL 파일에서 지정한 필드들의 평균 값을 비교 (항상 전체 경로 출력)"""
     print("\n📊 JSONL 파일 성능 비교")
     print(f"비교 대상 1: {file1}")
     print(f"비교 대상 2: {file2}\n")
@@ -37,11 +35,20 @@ def compare_jsonl_metrics_extended(file1, file2, fields_to_compare):
 
 
 if __name__ == "__main__":
-    # 🔧 비교할 JSONL 파일 경로
-    jsonl_file1 = "/data/sangjun/ckpt/token/finetune_w_img_1e-4_100/state_20/mmvet.jsonl"
-    jsonl_file2 = "/data/sangjun/ckpt/token/finetune_w_img_1e-4_100_layer2/state_20/mmvet.jsonl"
+    parser = argparse.ArgumentParser(description="두 JSONL 파일의 필드별 평균 비교")
+    parser.add_argument(
+        "--jsonl_file1", type=str,
+        default="/data/sangjun/ckpt/token/finetune_w_img_1e-4_100/state_20/mmvet.jsonl",
+        help="비교 대상 파일 1 경로"
+    )
+    parser.add_argument(
+        "--jsonl_file2", type=str,
+        default="/home/sangjun/LLaVA/playground/data/eval/mm-vet/answers_1gpu/llava-v1.5-7b.jsonl",
+        help="비교 대상 파일 2 경로"
+    )
 
-    # 📌 비교할 항목 목록
+    args = parser.parse_args()
+
     fields_to_compare = [
         "total_time",
         "tok_per_sec",
@@ -53,5 +60,4 @@ if __name__ == "__main__":
         "update_inference_inputs_total_time"
     ]
 
-    # 📈 비교 실행
-    compare_jsonl_metrics_extended(jsonl_file1, jsonl_file2, fields_to_compare)
+    compare_jsonl_metrics_extended(args.jsonl_file1, args.jsonl_file2, fields_to_compare)
