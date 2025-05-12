@@ -12,7 +12,7 @@ python -m model_vqa_eagle \
     --answers-file ${CKPT_PATH}/mmvet.jsonl \
     --temperature 0 \
     --conv-mode vicuna_v1 \
-    --token-process 5 \
+    --token-process 4 \
     --num_img_tok ${NUM_IMG_TOK} \
 
 #0:nothing

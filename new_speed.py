@@ -17,22 +17,21 @@ def compare_jsonl_metrics_extended(file1, file2, fields_to_compare):
     print(f"비교 대상 1: {file1}")
     print(f"비교 대상 2: {file2}\n")
 
-    header_format = f"{'항목':<42} | {'파일1 평균':>15} | {'파일2 평균':>15} | {'비율 (file2/file1)':>20}"
-    row_format = f"{'{:<42}'} | {'{:15.6f}'} | {'{:15.6f}'} | {'{:20.2f}'}"
+    header_format = "{:<42} | {:>15} | {:>15} | {:>20}"
+    row_format    = "{:<42} | {:15.6f} | {:15.6f} | {:20.2f}"
 
-    print(header_format)
-    print("-" * len(header_format))
+    print(header_format.format("항목", "파일1 평균", "파일2 평균", "비율 (file2/file1)"))
+    print("-" * 95)
 
     for field in fields_to_compare:
         values1 = load_jsonl_field(file1, field)
         values2 = load_jsonl_field(file2, field)
 
-        mean1 = values1.mean() if len(values1) > 0 else 0
-        mean2 = values2.mean() if len(values2) > 0 else 0
+        mean1 = values1.mean() if len(values1) > 0 else 0.0
+        mean2 = values2.mean() if len(values2) > 0 else 0.0
         ratio = mean2 / mean1 if mean1 > 1e-8 else 0.0
 
         print(row_format.format(field, mean1, mean2, ratio))
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="두 JSONL 파일의 필드별 평균 비교")
@@ -50,14 +49,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     fields_to_compare = [
-        "total_time",
+        "encoding_time",
+        "decoding_time",
         "tok_per_sec",
         "avg_accept_length",
         "initialize_time",
         "initialize_tree_time",
         "tree_decode_total_time",
         "evaluate_posterior_total_time",
-        "update_inference_inputs_total_time"
+        "update_inference_inputs_total_time",
+        "num_tokens"       # ← 여기 추가!
     ]
 
     compare_jsonl_metrics_extended(args.jsonl_file1, args.jsonl_file2, fields_to_compare)

@@ -80,6 +80,10 @@ def eval_model(args):
 
         image = Image.open(os.path.join(args.image_folder, image_file)).convert('RGB')
         inputs = processor(images=image, text=prompt, return_tensors='pt')
+        # **시간 측정 종료**
+        encoding_time = end_timer(start, end, name="total")#timer end
+        # **시간 측정 시작**
+        start, end = start_timer()#timer start
 
         
         
@@ -96,12 +100,12 @@ def eval_model(args):
                 )
             
         # **시간 측정 종료**
-        total_time = end_timer(start, end, name="total")#timer end
+        decoding_time = end_timer(start, end, name="total")#timer end
 
         outputs = processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
         
         num_tokens = output_ids.shape[1] - inputs["input_ids"].shape[1]
-        tok_per_sec = num_tokens/total_time
+        tok_per_sec = num_tokens/(decoding_time+encoding_time)
 
         ans_id = shortuuid.uuid()
         ans_file.write(json.dumps({"question_id": idx,
@@ -109,7 +113,8 @@ def eval_model(args):
                                    "text": outputs,
                                    "answer_id": ans_id,
                                    "model_id": model_name,
-                                   "total_time": total_time,
+                                   "encoding_time": encoding_time,
+                                   "decoding_time": decoding_time,
                                    "num_tokens": num_tokens,
                                    "tok_per_sec": tok_per_sec,   
                                    "avg_accept_length":avg_accept_length,

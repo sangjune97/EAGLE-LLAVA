@@ -233,8 +233,11 @@ def remove_image_token_except_first(
     input_ids,
     img_tok_index,
     hidden_states=None,
-    image_features=None
+    attentions=None,
+    image_features=None,
+    topk=20
 ):
+    
     """
     input_ids: [1, seq_len]
     hidden_states: [1, seq_len, dim] (optional)
