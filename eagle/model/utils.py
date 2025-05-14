@@ -372,7 +372,7 @@ def keep_topk_image_token(
         topk_indices_local = torch.arange(len(topk_indices_global), device=device)
     else:
         assert attentions is not None, "hidden_states가 주어졌으면 attentions도 있어야 해!"
-        last_layer_attn = attentions[-1][0]              # [heads, seq_len, seq_len]
+        last_layer_attn = attentions[0][0]              # [heads, seq_len, seq_len]
         
         # ★ 변경된 부분: 마지막 토큰 대신 CLS 토큰 사용
         cls_index = (input_ids == img_tok_index).nonzero(as_tuple=True)[0][0]

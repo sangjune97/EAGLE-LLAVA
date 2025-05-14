@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="두 JSONL 파일의 필드별 평균 비교")
     parser.add_argument(
         "--jsonl_file1", type=str,
-        default="/data/sangjun/ckpt/token/finetune_w_img_1e-4_100/state_20/mmvet.jsonl",
+        default="/data/sangjun/ckpt/token/cls/layer1/20_sharegpt/state_20/mmvet10.jsonl",
         help="비교 대상 파일 1 경로"
     )
     parser.add_argument(
