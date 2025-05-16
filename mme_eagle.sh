@@ -10,12 +10,12 @@ echo "CKPT_PATH: ${CKPT_PATH}"
 echo "TOK_PROCESS: ${TOK_PROCESS}"
 echo "NUM_IMG_TOK: ${NUM_IMG_TOK}"
 
-python -m model_vqa_eagle \
+python -m model_vqa_loader_eagle \
     --model-path /home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369 \
     --ea-model-path ${CKPT_PATH} \
-    --question-file /home/sangjun/LLaVA/playground/data/eval/mm-vet/llava-mm-vet.jsonl \
-    --image-folder /home/sangjun/LLaVA/playground/data/eval/mm-vet/images \
-    --answers-file ${CKPT_PATH}/mmvet_new.jsonl \
+    --question-file /home/sangjun/LLaVA/playground/data/MME/llava_mme.jsonl \
+    --image-folder /data/mme/MME_Benchmark_release_version/MME_Benchmark \
+    --answers-file ${CKPT_PATH}/mme.jsonl \
     --temperature 0 \
     --conv-mode vicuna_v1 \
     --token-process ${TOK_PROCESS} \

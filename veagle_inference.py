@@ -6,14 +6,39 @@ from eagle.model.ea_model import EaModel
 import torch
 import os
 from fastchat.model import get_conversation_template
+def decode_and_color(tgt_tokens, dft_tokens, tokenizer):
+    """
+    tgt_tokens: list of torch.Tensor (단일 토큰)
+    dft_tokens: list of torch.Tensor (여러 토큰)
+    tokenizer: HuggingFace tokenizer
+    """
+    # ANSI 컬러 코드
+    RED   = "\033[31m"
+    GREEN = "\033[32m"
+    RESET = "\033[0m"
 
+    # 길이 같은지 확인
+    assert len(tgt_tokens) == len(dft_tokens), "두 리스트 길이가 달라요!"
+
+    for i, (tgt, dft) in enumerate(zip(tgt_tokens, dft_tokens)):
+        # tgt: tensor(…) 형태 -> int 로 변환
+        tgt_id = tgt.item()
+        tgt_str = tokenizer.decode([tgt_id], skip_special_tokens=False)
+
+        # dft: tensor([...]) 형태 -> 리스트로 변환
+        dft_ids = dft.tolist()
+        dft_str = tokenizer.decode(dft_ids, skip_special_tokens=False)
+
+        # 출력
+        print(f"{i:02d}:", 
+              f"{RED}{tgt_str}{RESET}", 
+              f"{GREEN}{dft_str}{RESET}")
 # GPU 인덱스 0과 1을 사용하도록 설정
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 processor = AutoProcessor.from_pretrained("/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369")
 
 model = EaModel.from_pretrained(
     base_model_path="/home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369",
-    ea_model_path="/data/sangjun/ckpt/token/finetune_w_img_1e-4_300/state_20",
+    ea_model_path="/data/sangjun/ckpt/cls_only/finetune_w_img_1e-4_cls_hidden_llavashare_40epoch_embd/state_40",
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True,
     device_map="auto",
@@ -23,11 +48,11 @@ model = EaModel.from_pretrained(
 #yuhuili/EAGLE-Vicuna-13B-v1.3
 model.eval()
 
-prompt = "USER: <image>\nWhat is the image? Please descibre in very very in detailed. ASSISTANT:"
-url = "https://www.pncc.govt.nz/files/assets/public/v/2/images/services/animals/doggos.jpg?w=1920&h=1080"
-image = Image.open(requests.get(url, stream=True).raw)
+prompt = "USER: <image>\nIs it summertime in the scene? Answer it and give the rationale. ASSISTANT:"
+#url = "https://www.pncc.govt.nz/files/assets/public/v/2/images/services/animals/doggos.jpg?w=1920&h=1080"
+#image = Image.open(requests.get(url, stream=True).raw)
 #image = Image.open(os.path.join("/home/sangjun/LLaVA/playground/data/eval/mm-vet/images/v1_30.jpg")).convert('RGB')
-#image = Image.open(os.path.join("/data/COCO/train2017/000000027989.jpg")).convert('RGB')
+image = Image.open(os.path.join("/home/sangjun/LLaVA/playground/data/eval/mm-vet/images/v1_142.jpg")).convert('RGB')
 
 inputs = processor(images=image, text=prompt, return_tensors="pt")
 #your_message="Do you know what is the purpose of life?"
@@ -39,14 +64,14 @@ inputs = processor(images=image, text=prompt, return_tensors="pt")
 #input_ids=tokenizer([prompt]).input_ids
 #input_ids = torch.as_tensor(input_ids).cuda()
 
-generate_ids, new_token, idx, avg_accept_length, initialize_time, initialize_tree_time, tree_decode_total_time, evaluate_posterior_total_time, update_inference_inputs_total_time  = model.eagenerate(
+generate_ids, new_token, idx, avg_accept_length, initialize_time, initialize_tree_time, tree_decode_total_time, evaluate_posterior_total_time, update_inference_inputs_total_time, tgt_tokens, dft_tokens  = model.eagenerate(
     input_ids = torch.as_tensor(inputs["input_ids"]).cuda(),
     temperature=0,
     log=True,
     pixel_values=torch.as_tensor(inputs["pixel_values"]).cuda(),
-    max_new_tokens=256,
-    token_process = 5,
-    num_img_tokens=100
+    max_new_tokens=1024,
+    token_process = 4,
+    num_img_tokens=0
     )
 output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
 print("Outputs:\n")
@@ -60,11 +85,7 @@ print("update_inference_inputs_total_time:",update_inference_inputs_total_time)
 
 
 
-
-
-
-
-
+decode_and_color(tgt_tokens, dft_tokens, processor.tokenizer)
 
 #########################################################################################################################
 

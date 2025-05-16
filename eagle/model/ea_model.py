@@ -241,6 +241,8 @@ class EaModel(nn.Module):
             
 
     ):
+        tgt_tokens = []
+        dft_tokens = []
         start, end = start_timer()#timer start
         if is_llama3:
             stop_token_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
@@ -331,7 +333,7 @@ class EaModel(nn.Module):
             
             #print(accept_length)
             #with Timer("update_inference_inputs"):
-            input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token = update_inference_inputs(
+            input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, hidden_state, sample_token, tgt_tokens, dft_tokens = update_inference_inputs(
                 input_ids,
                 candidates,
                 best_candidate,
@@ -346,6 +348,8 @@ class EaModel(nn.Module):
                 sample_p,
                 token_process,
                 num_img_tokens,
+                tgt_tokens, 
+                dft_tokens
             )
             update_inference_inputs_total_time  += end_timer(start, end, name="update_inference_inputs")#timer end
 
@@ -366,7 +370,7 @@ class EaModel(nn.Module):
         if not log:
             return input_ids
         else:
-            return input_ids, new_token, idx, avg_accept_length, initialize_time, initialize_tree_time, tree_decode_total_time, evaluate_posterior_total_time, update_inference_inputs_total_time
+            return input_ids, new_token, idx, avg_accept_length, initialize_time, initialize_tree_time, tree_decode_total_time, evaluate_posterior_total_time, update_inference_inputs_total_time, tgt_tokens, dft_tokens
 
 
     @torch.no_grad()

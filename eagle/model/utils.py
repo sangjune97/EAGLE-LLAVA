@@ -331,11 +331,13 @@ def remove_image_token(input_ids, img_tok_index, hidden_states=None, attentions=
     topk=20):
     mask = input_ids != img_tok_index
     filtered_input_ids = input_ids[mask].view(1, -1).to(input_ids.device)
+    filtered_image_features = None
+    filtered_hidden_states = None
     if hidden_states is not None:
         filtered_hidden_states = hidden_states[:, mask[0], :]
-        return filtered_input_ids, filtered_hidden_states
+        return filtered_input_ids, filtered_hidden_states, filtered_image_features
     
-    return filtered_input_ids
+    return filtered_input_ids, filtered_hidden_states, filtered_image_features
 
 def pool_image_token(input_ids, img_tok_index, hidden_states=None):
     mask = input_ids != img_tok_index
@@ -452,7 +454,8 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
         img_tok_index=model.base_model.config.image_token_index,
         hidden_states=hidden_states,
         attentions=outputs.attentions,
-        image_features=image_features)
+        image_features=image_features,
+        topk=num_img_tokens)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
@@ -635,6 +638,8 @@ def update_inference_inputs(
         sample_p,
         token_process,
         num_img_tokens,
+        tgt_tokens,
+        dft_tokens
 ):
     if token_process == 1:
         process_token = remove_image_token
@@ -658,6 +663,8 @@ def update_inference_inputs(
     input_ids = torch.cat(
         [input_ids, candidates[None, best_candidate, : accept_length + 1].to(input_ids.device)], dim=-1
     )
+    tgt_tokens.append(candidates[None, best_candidate, : accept_length + 1][0][0])
+    dft_tokens.append(candidates[None, best_candidate, : accept_length + 1][0][1:])
     
     #selected_tokens = model.tokenizer.batch_decode(candidates[None, best_candidate, 1: accept_length + 1].tolist())
     #print(selected_tokens)
@@ -688,7 +695,8 @@ def update_inference_inputs(
     input_ids = input_ids.to(ea_layer_device)
     filtered_input_ids, _, _ = process_token(
         input_ids=input_ids,
-        img_tok_index=model.base_model.config.image_token_index)
+        img_tok_index=model.base_model.config.image_token_index,
+        topk=num_img_tokens)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)
@@ -698,7 +706,7 @@ def update_inference_inputs(
 
     new_token += int(accept_length) + 1
 
-    return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token
+    return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token, tgt_tokens,dft_tokens
 
 
 if __name__ == "__main__":

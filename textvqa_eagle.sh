@@ -13,9 +13,9 @@ echo "NUM_IMG_TOK: ${NUM_IMG_TOK}"
 python -m model_vqa_eagle \
     --model-path /home/sangjun/.cache/huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6ceb2ed33cb8f107a781c431fe2e61574da69369 \
     --ea-model-path ${CKPT_PATH} \
-    --question-file /home/sangjun/LLaVA/playground/data/eval/mm-vet/llava-mm-vet.jsonl \
-    --image-folder /home/sangjun/LLaVA/playground/data/eval/mm-vet/images \
-    --answers-file ${CKPT_PATH}/mmvet_new.jsonl \
+    --question-file /home/sangjun/LLaVA/playground/data/textvqa/llava_textvqa_val_v051_ocr.jsonl \
+    --image-folder /data/textvqa/train_images \
+    --answers-file ${CKPT_PATH}/textvqa.jsonl \
     --temperature 0 \
     --conv-mode vicuna_v1 \
     --token-process ${TOK_PROCESS} \

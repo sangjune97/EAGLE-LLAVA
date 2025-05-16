@@ -42,13 +42,14 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--jsonl_file2", type=str,
-        default="/home/sangjun/LLaVA/playground/data/eval/mm-vet/answers_1gpu/llava-v1.5-7b.jsonl",
+        default="/home/sangjun/LLaVA/playground/data/eval/llava-bench-in-the-wild/answers/llava-v1.5-7b.jsonl",
         help="비교 대상 파일 2 경로"
     )
 
     args = parser.parse_args()
 
     fields_to_compare = [
+        "total_time",
         "encoding_time",
         "decoding_time",
         "tok_per_sec",
