@@ -452,7 +452,8 @@ def initialize_tree(input_ids, model, pixel_values, past_key_values, logits_proc
         img_tok_index=model.base_model.config.image_token_index,
         hidden_states=hidden_states,
         attentions=outputs.attentions,
-        image_features=image_features)
+        image_features=image_features,
+        topk=num_img_tokens)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_hidden_states = filtered_hidden_states.to(ea_layer_device)
@@ -688,7 +689,8 @@ def update_inference_inputs(
     input_ids = input_ids.to(ea_layer_device)
     filtered_input_ids, _, _ = process_token(
         input_ids=input_ids,
-        img_tok_index=model.base_model.config.image_token_index)
+        img_tok_index=model.base_model.config.image_token_index,
+        topk=num_img_tokens)
     filtered_input_ids = filtered_input_ids.to(ea_layer_device)
     filtered_input_ids = torch.cat((filtered_input_ids, token.to(filtered_input_ids.device)), dim=1)
     accept_hidden_state_new = accept_hidden_state_new.to(ea_layer_device)

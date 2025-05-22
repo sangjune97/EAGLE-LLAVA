@@ -2,9 +2,12 @@
 export CUDA_VISIBLE_DEVICES=0
 
 CKPT_PATH=$1
-NUM_IMG_TOK=$2
+TOK_PROCESS=$2
+NUM_IMG_TOK=$3
+
 
 echo "CKPT_PATH: ${CKPT_PATH}"
+echo "TOK_PROCESS: ${TOK_PROCESS}"
 echo "NUM_IMG_TOK: ${NUM_IMG_TOK}"
 
 python -m model_vqa_eagle \
@@ -12,10 +15,10 @@ python -m model_vqa_eagle \
     --ea-model-path ${CKPT_PATH} \
     --question-file /home/sangjun/LLaVA/playground/data/eval/mm-vet/llava-mm-vet.jsonl \
     --image-folder /home/sangjun/LLaVA/playground/data/eval/mm-vet/images \
-    --answers-file ${CKPT_PATH}/mmvet1.jsonl \
+    --answers-file ${CKPT_PATH}/mmvet_cls${NUM_IMG_TOK}.jsonl \
     --temperature 0 \
     --conv-mode vicuna_v1 \
-    --token-process 5 \
+    --token-process ${TOK_PROCESS} \
     --num_img_tok ${NUM_IMG_TOK} \
 
 #0:nothing
